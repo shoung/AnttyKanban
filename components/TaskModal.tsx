@@ -67,7 +67,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         setFormData({
           title: '',
           startDate: new Date().toISOString().split('T')[0],
-          endDate: new Date().toISOString().split('T')[0],
+          endDate: '',
           manDays: 1,
           assignee: '',
           tags: [],
