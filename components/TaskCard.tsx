@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Calendar, Clock, GripVertical, Hash, MessageCircle, User } from 'lucide-react';
 import { Task } from '../types';
 
@@ -46,6 +46,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 
   const cardStyle = getUrgencyStyles(task.endDate);
   const commentCount = task.comments?.length || 0;
+  const [isImagePreviewOpen, setIsImagePreviewOpen] = useState(false);
+  const imageAlt = task.title ? `${task.title} 附圖` : '任務附圖';
 
   return (
     <div
@@ -76,12 +78,42 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       </div>
 
       {task.imageUrl && (
-        <img
-          src={task.imageUrl}
-          alt={task.title ? `${task.title} 附圖` : '任務附圖'}
-          className="w-full h-32 object-cover rounded-md mb-3 border border-slate-200/70 dark:border-slate-700/70 bg-slate-100 dark:bg-slate-900"
-          loading="lazy"
-        />
+        <>
+          <button
+            type="button"
+            aria-label={`放大檢視${imageAlt}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              setIsImagePreviewOpen(true);
+            }}
+            className="block w-full mb-3 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-800"
+          >
+            <img
+              src={task.imageUrl}
+              alt={imageAlt}
+              className="w-full h-32 object-cover rounded-md border border-slate-200/70 dark:border-slate-700/70 bg-slate-100 dark:bg-slate-900"
+              loading="lazy"
+            />
+          </button>
+
+          {isImagePreviewOpen && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 cursor-zoom-out"
+              onClick={(event) => {
+                event.stopPropagation();
+                setIsImagePreviewOpen(false);
+              }}
+              role="presentation"
+            >
+              <img
+                src={task.imageUrl}
+                alt={imageAlt}
+                className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg shadow-2xl cursor-default"
+                onClick={(event) => event.stopPropagation()}
+              />
+            </div>
+          )}
+        </>
       )}
 
       <div className="space-y-2">
