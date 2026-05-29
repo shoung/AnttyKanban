@@ -56,6 +56,15 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onEdit, onDelete, onDr
         </div>
       </div>
 
+      {task.imageUrl && (
+        <img
+          src={task.imageUrl}
+          alt={task.title ? `${task.title} 附圖` : '任務附圖'}
+          className="w-full h-32 object-cover rounded-md mb-3 border border-slate-200/70 dark:border-slate-700/70 bg-slate-100 dark:bg-slate-900"
+          loading="lazy"
+        />
+      )}
+
       <div className="space-y-2">
         {/* Tags */}
         {task.tags.length > 0 && (

@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Moon, Sun, Trash2, Layout, FolderPlus, MoreHorizontal, PenLine, FolderOpen, LogOut, LogIn, Loader2, AlertCircle, Copy, HelpCircle, User as UserIcon } from 'lucide-react';
+import { Plus, Moon, Sun, Trash2, Layout, PenLine, FolderOpen, LogOut, LogIn, Loader2, AlertCircle, Copy, HelpCircle } from 'lucide-react';
 import { Column, Task, Project } from './types';
 import { TaskCard } from './components/TaskCard';
 import { TaskModal } from './components/TaskModal';
 import { Button } from './components/Button';
 import { auth, db, googleProvider } from './firebase';
-import { signInWithPopup, signOut, onAuthStateChanged, User, signInAnonymously } from 'firebase/auth';
+import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 
 // Initial Data Generators
@@ -61,6 +61,9 @@ const INITIAL_PROJECTS: Project[] = [
     ]
   }
 ];
+
+const TEAM_BOARD_ID = 'default';
+const getBoardDocRef = () => doc(db, 'boards', TEAM_BOARD_ID);
 
 const App: React.FC = () => {
   // --- Auth & Data State ---
@@ -119,8 +122,8 @@ const App: React.FC = () => {
       return;
     }
 
-    const userDocRef = doc(db, "users", user.uid);
-    const unsubscribe = onSnapshot(userDocRef, (docSnap) => {
+    const boardDocRef = getBoardDocRef();
+    const unsubscribe = onSnapshot(boardDocRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         if (data.projects && Array.isArray(data.projects)) {
@@ -132,8 +135,12 @@ const App: React.FC = () => {
           });
         }
       } else {
-        // New user: Write initial data
-        setDoc(userDocRef, { projects: INITIAL_PROJECTS }, { merge: true });
+        // Initialize shared team board data
+        setDoc(boardDocRef, {
+          projects: INITIAL_PROJECTS,
+          updatedAt: new Date().toISOString(),
+          updatedBy: user.uid,
+        }, { merge: true });
       }
       setDataLoading(false);
     }, (error) => {
@@ -151,7 +158,11 @@ const App: React.FC = () => {
     setProjects(newProjects);
     if (user) {
       try {
-        await setDoc(doc(db, "users", user.uid), { projects: newProjects }, { merge: true });
+        await setDoc(getBoardDocRef(), {
+          projects: newProjects,
+          updatedAt: new Date().toISOString(),
+          updatedBy: user.uid,
+        }, { merge: true });
       } catch (e) {
         console.error("Error saving to Firestore", e);
       }
@@ -207,21 +218,6 @@ const App: React.FC = () => {
       }
 
       setLoginError(errorData);
-    }
-  };
-
-  const handleAnonymousLogin = async () => {
-    setLoginError(null);
-    try {
-      await signInAnonymously(auth);
-    } catch (error: any) {
-      console.error("Anonymous login failed:", error);
-      setLoginError({
-        title: "訪客登入失敗",
-        message: "請確認 Firebase Console > Authentication > Sign-in method > Anonymous 已開啟。",
-        code: error.code,
-        details: error.message
-      });
     }
   };
 
@@ -312,6 +308,10 @@ const App: React.FC = () => {
           columnId: taskData.columnId || activeColumnForNewTask,
           icon: taskData.icon || '🐜',
         };
+        if (taskData.imageUrl) {
+          newTask.imageUrl = taskData.imageUrl;
+          newTask.imagePath = taskData.imagePath;
+        }
         return {
           ...project,
           tasks: [...project.tasks, newTask]
@@ -430,7 +430,7 @@ const App: React.FC = () => {
           </div>
           <h1 className="text-2xl font-bold mb-2 text-slate-800 dark:text-slate-100">歡迎使用小螞蟻看板</h1>
           <p className="text-slate-500 dark:text-slate-400 mb-8">
-            登入以同步您的專案，隨時隨地管理任務。
+            登入以進入團隊共用看板，和夥伴即時協作。
           </p>
           
           {loginError && (
@@ -502,11 +502,6 @@ const App: React.FC = () => {
               <LogIn className="w-5 h-5" />
               使用 Google 帳號登入
             </Button>
-
-            <Button onClick={handleAnonymousLogin} variant="secondary" className="w-full h-12 text-base gap-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300">
-              <UserIcon className="w-5 h-5" />
-              訪客登入 (測試用)
-            </Button>
           </div>
 
           <div className="mt-6 flex justify-center">
@@ -540,7 +535,7 @@ const App: React.FC = () => {
 
         <div className="p-4 flex-1 flex flex-col min-h-0">
           <div className="flex items-center justify-between mb-2 px-1">
-            <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">我的專案</h2>
+            <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">團隊專案</h2>
             <button onClick={addProject} className="text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 p-1">
               <Plus className="w-4 h-4" />
             </button>
@@ -603,17 +598,11 @@ const App: React.FC = () => {
         {/* User Profile & Dark Mode */}
         <div className="p-4 border-t border-gray-100 dark:border-slate-800 space-y-2">
            <div className="flex items-center gap-3 px-2 py-2 mb-2">
-             {user.isAnonymous ? (
-                <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center">
-                  <UserIcon className="w-4 h-4 text-slate-500 dark:text-slate-400"/>
-                </div>
-             ) : (
-                <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || 'User'}`} alt="User" className="w-8 h-8 rounded-full border border-slate-200 dark:border-slate-700" />
-             )}
+             <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || 'User'}`} alt="User" className="w-8 h-8 rounded-full border border-slate-200 dark:border-slate-700" />
              
              <div className="flex-1 truncate">
-               <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{user.isAnonymous ? '訪客使用者' : user.displayName}</p>
-               <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{user.isAnonymous ? '(資料僅暫存於此專案)' : user.email}</p>
+               <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{user.displayName || 'Google 使用者'}</p>
+               <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{user.email}</p>
              </div>
            </div>
 

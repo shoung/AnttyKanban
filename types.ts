@@ -9,6 +9,8 @@ export interface Task {
   assignee: string;
   columnId: string;
   icon: string;
+  imageUrl?: string;
+  imagePath?: string;
 }
 
 export interface Column {

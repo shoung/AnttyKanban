@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, Calendar as CalendarIcon } from 'lucide-react';
+import { X, Plus, Trash2, Calendar as CalendarIcon, Upload, Loader2 } from 'lucide-react';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Task, Column } from '../types';
 import { Button } from './Button';
+import { storage } from '../firebase';
 
 interface TaskModalProps {
   isOpen: boolean;
@@ -36,6 +38,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   });
 
   const [tagInput, setTagInput] = useState('');
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -77,8 +80,39 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     setFormData((prev) => ({ ...prev, tags: prev.tags?.filter(t => t !== tagToRemove) }));
   };
 
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('請選擇圖片檔案');
+      return;
+    }
+
+    setIsUploadingImage(true);
+    try {
+      const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
+      const imagePath = `task-images/${Date.now()}-${safeFileName}`;
+      const imageRef = ref(storage, imagePath);
+      await uploadBytes(imageRef, file, { contentType: file.type });
+      const imageUrl = await getDownloadURL(imageRef);
+      setFormData((prev) => ({ ...prev, imageUrl, imagePath }));
+    } catch (error) {
+      console.error('Image upload failed:', error);
+      alert('圖片上傳失敗，請確認 Firebase Storage Rules 是否允許登入者上傳。');
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
+  const removeImage = () => {
+    setFormData((prev) => ({ ...prev, imageUrl: '', imagePath: '' }));
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isUploadingImage) return;
     onSave(formData);
     onClose();
   };
@@ -131,6 +165,45 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-md bg-transparent text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow"
               placeholder="輸入任務名稱..."
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+              任務圖片
+            </label>
+
+            {formData.imageUrl && (
+              <div className="relative mb-3 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
+                <img
+                  src={formData.imageUrl}
+                  alt="任務圖片預覽"
+                  className="w-full max-h-56 object-cover bg-slate-100 dark:bg-slate-800"
+                />
+                <button
+                  type="button"
+                  onClick={removeImage}
+                  disabled={isUploadingImage}
+                  className="absolute top-2 right-2 p-1.5 rounded-full bg-black/60 text-white hover:bg-red-600 disabled:opacity-60 transition-colors"
+                  title="移除圖片"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+            <label className={`flex items-center justify-center gap-2 w-full px-3 py-3 border border-dashed border-slate-300 dark:border-slate-700 rounded-md text-sm text-slate-600 dark:text-slate-300 transition-colors ${
+              isUploadingImage ? 'cursor-not-allowed opacity-70' : 'cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50'
+            }`}>
+              {isUploadingImage ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+              {isUploadingImage ? '圖片上傳中...' : (formData.imageUrl ? '更換圖片' : '選擇圖片上傳')}
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+                disabled={isUploadingImage}
+                className="hidden"
+              />
+            </label>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -255,8 +328,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 <div></div> 
             )}
             <div className="flex gap-2">
-              <Button type="button" variant="ghost" onClick={onClose}>取消</Button>
-              <Button type="submit">儲存</Button>
+              <Button type="button" variant="ghost" onClick={onClose} disabled={isUploadingImage}>取消</Button>
+              <Button type="submit" disabled={isUploadingImage}>{isUploadingImage ? '上傳中...' : '儲存'}</Button>
             </div>
           </div>
         </form>
