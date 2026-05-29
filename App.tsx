@@ -395,6 +395,8 @@ const App: React.FC = () => {
   };
 
   const saveTask = (taskData: Partial<Task>) => {
+    let updatedEditingTask: Task | null = null;
+
     const newProjects = projects.map((project) => {
       if (project.id !== activeProjectId) return project;
 
@@ -402,9 +404,13 @@ const App: React.FC = () => {
         // Update
         return {
           ...project,
-          tasks: project.tasks.map((t) =>
-            t.id === editingTask.id ? ({ ...t, ...taskData } as Task) : t,
-          ),
+          tasks: project.tasks.map((t) => {
+            if (t.id !== editingTask.id) return t;
+
+            const updatedTask = { ...t, ...taskData } as Task;
+            updatedEditingTask = updatedTask;
+            return updatedTask;
+          }),
         };
       } else {
         // Create
@@ -434,6 +440,10 @@ const App: React.FC = () => {
       }
     });
     updateProjects(newProjects);
+
+    if (updatedEditingTask && editingTask?.id === updatedEditingTask.id) {
+      setEditingTask(updatedEditingTask);
+    }
   };
 
   const deleteTask = (taskId: string) => {

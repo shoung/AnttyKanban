@@ -10,7 +10,7 @@ import {
   Send,
 } from 'lucide-react';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { Task, Column } from '../types';
+import { Task, Column, TaskComment } from '../types';
 import { Button } from './Button';
 import { storage } from '../firebase';
 
@@ -57,6 +57,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
   const [tagInput, setTagInput] = useState('');
   const [commentInput, setCommentInput] = useState('');
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingCommentText, setEditingCommentText] = useState('');
   const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   useEffect(() => {
@@ -78,6 +80,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       }
       setTagInput('');
       setCommentInput('');
+      setEditingCommentId(null);
+      setEditingCommentText('');
     }
   }, [isOpen, initialData, activeColumnId, columns]);
 
@@ -139,6 +143,19 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     a.createdAt.localeCompare(b.createdAt),
   );
 
+  const persistComments = (comments: TaskComment[]) => {
+    const nextFormData: Partial<Task> = {
+      ...formData,
+      comments,
+    };
+
+    setFormData(nextFormData);
+
+    if (initialData) {
+      onSave(nextFormData);
+    }
+  };
+
   const handleAddComment = () => {
     const text = commentInput.trim();
     if (!text || !currentUser) return;
@@ -162,6 +179,45 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
     if (initialData) {
       onSave(nextFormData);
+    }
+  };
+
+  const handleStartEditComment = (comment: TaskComment) => {
+    if (currentUser?.uid !== comment.authorId) return;
+    setEditingCommentId(comment.id);
+    setEditingCommentText(comment.text);
+  };
+
+  const handleCancelEditComment = () => {
+    setEditingCommentId(null);
+    setEditingCommentText('');
+  };
+
+  const handleSaveEditedComment = (commentId: string) => {
+    const text = editingCommentText.trim();
+    if (!text || !currentUser) return;
+
+    const comments = (formData.comments || []).map((comment) =>
+      comment.id === commentId && comment.authorId === currentUser.uid
+        ? { ...comment, text }
+        : comment,
+    );
+
+    persistComments(comments);
+    handleCancelEditComment();
+  };
+
+  const handleDeleteComment = (commentId: string) => {
+    if (!currentUser) return;
+
+    const comment = (formData.comments || []).find((item) => item.id === commentId);
+    if (!comment || comment.authorId !== currentUser.uid) return;
+
+    const comments = (formData.comments || []).filter((item) => item.id !== commentId);
+    persistComments(comments);
+
+    if (editingCommentId === commentId) {
+      handleCancelEditComment();
     }
   };
 
@@ -400,24 +456,79 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
             <div className="space-y-3 max-h-60 overflow-y-auto pr-1 mb-3">
               {sortedComments.length > 0 ? (
-                sortedComments.map((comment) => (
-                  <div
-                    key={comment.id}
-                    className="rounded-lg bg-slate-50 dark:bg-slate-800/70 border border-slate-100 dark:border-slate-700 p-3"
-                  >
-                    <div className="flex items-start justify-between gap-2 mb-1">
-                      <span className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">
-                        {comment.authorName || '未知使用者'}
-                      </span>
-                      <time className="text-[11px] text-slate-400 flex-shrink-0">
-                        {formatCommentTime(comment.createdAt)}
-                      </time>
+                sortedComments.map((comment) => {
+                  const isOwnComment = currentUser?.uid === comment.authorId;
+                  const isEditingComment = editingCommentId === comment.id;
+
+                  return (
+                    <div
+                      key={comment.id}
+                      className="rounded-lg bg-slate-50 dark:bg-slate-800/70 border border-slate-100 dark:border-slate-700 p-3"
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div className="min-w-0">
+                          <span className="block text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">
+                            {comment.authorName || '未知使用者'}
+                          </span>
+                          <time className="text-[11px] text-slate-400">
+                            {formatCommentTime(comment.createdAt)}
+                          </time>
+                        </div>
+
+                        {isOwnComment && !isEditingComment && (
+                          <div className="flex flex-shrink-0 items-center gap-2 text-xs">
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditComment(comment)}
+                              className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                            >
+                              編輯
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteComment(comment.id)}
+                              className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                            >
+                              刪除
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {isEditingComment ? (
+                        <div className="space-y-2">
+                          <textarea
+                            value={editingCommentText}
+                            onChange={(e) => setEditingCommentText(e.target.value)}
+                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-md bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-20 resize-y"
+                            autoFocus
+                          />
+                          <div className="flex justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={handleCancelEditComment}
+                              className="text-xs px-2 py-1 rounded-md text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                            >
+                              取消
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveEditedComment(comment.id)}
+                              disabled={!editingCommentText.trim()}
+                              className="text-xs px-2 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              儲存
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words">
+                          {comment.text}
+                        </p>
+                      )}
                     </div>
-                    <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words">
-                      {comment.text}
-                    </p>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <div className="text-sm text-slate-400 text-center py-4 border border-dashed border-slate-200 dark:border-slate-700 rounded-lg">
                   尚無留言，成為第一個留言的人吧。
