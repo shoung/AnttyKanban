@@ -8,6 +8,7 @@ export interface Task {
   tags: string[];
   assignee: string;
   columnId: string;
+  order: number;
   icon: string;
   imageUrl?: string;
   imagePath?: string;

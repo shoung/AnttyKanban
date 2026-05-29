@@ -68,7 +68,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   };
 
   const handleAddTag = (e: React.KeyboardEvent | React.MouseEvent) => {
-    if ((e.type === 'keydown' && (e as React.KeyboardEvent).key !== 'Enter') || !tagInput.trim()) return;
+    if ((e.type === 'keydown' && (e as React.KeyboardEvent).key !== 'Enter') || !tagInput.trim())
+      return;
     e.preventDefault();
     if (formData.tags && !formData.tags.includes(tagInput.trim())) {
       setFormData((prev) => ({ ...prev, tags: [...(prev.tags || []), tagInput.trim()] }));
@@ -77,7 +78,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   };
 
   const removeTag = (tagToRemove: string) => {
-    setFormData((prev) => ({ ...prev, tags: prev.tags?.filter(t => t !== tagToRemove) }));
+    setFormData((prev) => ({ ...prev, tags: prev.tags?.filter((t) => t !== tagToRemove) }));
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -124,7 +125,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
             {initialData ? '編輯任務' : '新建任務'}
           </h2>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
+          <button
+            onClick={onClose}
+            className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -140,10 +144,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 <button
                   type="button"
                   key={emoji}
-                  onClick={() => setFormData(prev => ({ ...prev, icon: emoji }))}
+                  onClick={() => setFormData((prev) => ({ ...prev, icon: emoji }))}
                   className={`w-9 h-9 flex items-center justify-center rounded-md text-xl transition-all ${
-                    formData.icon === emoji 
-                      ? 'bg-blue-100 dark:bg-blue-900/50 ring-2 ring-blue-500 scale-110' 
+                    formData.icon === emoji
+                      ? 'bg-blue-100 dark:bg-blue-900/50 ring-2 ring-blue-500 scale-110'
                       : 'hover:bg-slate-200 dark:hover:bg-slate-700'
                   }`}
                 >
@@ -191,11 +195,19 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               </div>
             )}
 
-            <label className={`flex items-center justify-center gap-2 w-full px-3 py-3 border border-dashed border-slate-300 dark:border-slate-700 rounded-md text-sm text-slate-600 dark:text-slate-300 transition-colors ${
-              isUploadingImage ? 'cursor-not-allowed opacity-70' : 'cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50'
-            }`}>
-              {isUploadingImage ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-              {isUploadingImage ? '圖片上傳中...' : (formData.imageUrl ? '更換圖片' : '選擇圖片上傳')}
+            <label
+              className={`flex items-center justify-center gap-2 w-full px-3 py-3 border border-dashed border-slate-300 dark:border-slate-700 rounded-md text-sm text-slate-600 dark:text-slate-300 transition-colors ${
+                isUploadingImage
+                  ? 'cursor-not-allowed opacity-70'
+                  : 'cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50'
+              }`}
+            >
+              {isUploadingImage ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Upload className="w-4 h-4" />
+              )}
+              {isUploadingImage ? '圖片上傳中...' : formData.imageUrl ? '更換圖片' : '選擇圖片上傳'}
               <input
                 type="file"
                 accept="image/*"
@@ -279,8 +291,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               onChange={handleInputChange}
               className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-md bg-transparent text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              {columns.map(col => (
-                <option key={col.id} value={col.id} className="dark:bg-slate-900">{col.title}</option>
+              {columns.map((col) => (
+                <option key={col.id} value={col.id} className="dark:bg-slate-900">
+                  {col.title}
+                </option>
               ))}
             </select>
           </div>
@@ -304,7 +318,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             </div>
             <div className="flex flex-wrap gap-2 min-h-[2rem]">
               {formData.tags?.map((tag, idx) => (
-                <span key={idx} className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                <span
+                  key={idx}
+                  className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
+                >
                   #{tag}
                   <button
                     type="button"
@@ -320,16 +337,27 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
           <div className="flex justify-between pt-4 border-t border-slate-200 dark:border-slate-800 mt-6">
             {initialData && onDelete ? (
-               <Button type="button" variant="danger" onClick={() => { onDelete(initialData.id); onClose(); }}>
-                 <Trash2 className="w-4 h-4 mr-2" />
-                 刪除
-               </Button>
+              <Button
+                type="button"
+                variant="danger"
+                onClick={() => {
+                  onDelete(initialData.id);
+                  onClose();
+                }}
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                刪除
+              </Button>
             ) : (
-                <div></div> 
+              <div></div>
             )}
             <div className="flex gap-2">
-              <Button type="button" variant="ghost" onClick={onClose} disabled={isUploadingImage}>取消</Button>
-              <Button type="submit" disabled={isUploadingImage}>{isUploadingImage ? '上傳中...' : '儲存'}</Button>
+              <Button type="button" variant="ghost" onClick={onClose} disabled={isUploadingImage}>
+                取消
+              </Button>
+              <Button type="submit" disabled={isUploadingImage}>
+                {isUploadingImage ? '上傳中...' : '儲存'}
+              </Button>
             </div>
           </div>
         </form>
