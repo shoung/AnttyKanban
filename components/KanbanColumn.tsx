@@ -1,6 +1,6 @@
 import React from 'react';
 import { useDroppable } from '@dnd-kit/core';
-import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable';
 import { Plus, Trash2 } from 'lucide-react';
 import { Column, Task } from '../types';
 import { SortableTaskCard } from './SortableTaskCard';
@@ -43,7 +43,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
   return (
     <div
       ref={setNodeRef}
-      className={`w-80 flex-shrink-0 flex flex-col max-h-[calc(100vh-8rem)] rounded-xl bg-gray-100/80 dark:bg-slate-900/50 border backdrop-blur-sm transition-all ${
+      className={`w-[42rem] flex-shrink-0 flex flex-col max-h-[calc(100vh-8rem)] rounded-xl bg-gray-100/80 dark:bg-slate-900/50 border backdrop-blur-sm transition-all ${
         isOver
           ? 'border-blue-400 ring-2 ring-blue-300/60 bg-blue-50/80 dark:bg-blue-950/20'
           : 'border-gray-200 dark:border-slate-800'
@@ -103,15 +103,15 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
         </div>
       </div>
 
-      <SortableContext items={tasks.map((task) => task.id)} strategy={verticalListSortingStrategy}>
-        <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-3 scrollbar-hide min-h-32">
+      <SortableContext items={tasks.map((task) => task.id)} strategy={rectSortingStrategy}>
+        <div className="flex-1 overflow-y-auto px-3 pb-3 grid grid-cols-2 gap-3 content-start scrollbar-hide min-h-32">
           {tasks.map((task) => (
             <SortableTaskCard key={task.id} task={task} onEdit={onEditTask} />
           ))}
 
           {tasks.length === 0 && (
             <div
-              className={`h-24 border-2 border-dashed rounded-lg flex items-center justify-center text-sm transition-colors ${
+              className={`col-span-2 h-24 border-2 border-dashed rounded-lg flex items-center justify-center text-sm transition-colors ${
                 isActiveDrag || isOver
                   ? 'border-blue-300 text-blue-500 bg-blue-50/80 dark:border-blue-700 dark:text-blue-300 dark:bg-blue-950/20'
                   : 'border-gray-200 dark:border-slate-800 text-gray-400 bg-white/50 dark:bg-slate-800/20'
@@ -122,14 +122,14 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
           )}
 
           {isActiveDrag && tasks.length > 0 && isOver && (
-            <div className="h-12 border-2 border-dashed border-blue-300 dark:border-blue-700 rounded-lg bg-blue-50/80 dark:bg-blue-950/20 flex items-center justify-center text-xs text-blue-500 dark:text-blue-300">
+            <div className="col-span-2 h-12 border-2 border-dashed border-blue-300 dark:border-blue-700 rounded-lg bg-blue-50/80 dark:bg-blue-950/20 flex items-center justify-center text-xs text-blue-500 dark:text-blue-300">
               放開以排序或移動到此欄
             </div>
           )}
 
           <button
             onClick={() => onAddTask(column.id)}
-            className="w-full py-2 flex items-center justify-center gap-2 text-gray-500 hover:text-gray-700 dark:text-slate-500 dark:hover:text-slate-300 hover:bg-gray-200/50 dark:hover:bg-slate-800/50 rounded-md transition-colors text-sm border border-transparent hover:border-dashed hover:border-gray-300 dark:hover:border-slate-700"
+            className="col-span-2 w-full py-2 flex items-center justify-center gap-2 text-gray-500 hover:text-gray-700 dark:text-slate-500 dark:hover:text-slate-300 hover:bg-gray-200/50 dark:hover:bg-slate-800/50 rounded-md transition-colors text-sm border border-transparent hover:border-dashed hover:border-gray-300 dark:hover:border-slate-700"
             type="button"
           >
             <Plus className="w-4 h-4" />

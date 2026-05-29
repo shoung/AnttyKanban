@@ -868,7 +868,7 @@ const App: React.FC = () => {
               {/* Add Column Button (End of list) */}
               <button
                 onClick={addColumn}
-                className="w-80 h-12 flex-shrink-0 flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 dark:border-slate-800 text-gray-500 dark:text-slate-500 hover:border-blue-500 hover:text-blue-500 hover:bg-blue-50/50 dark:hover:bg-blue-900/20 transition-all group"
+                className="w-[42rem] h-12 flex-shrink-0 flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 dark:border-slate-800 text-gray-500 dark:text-slate-500 hover:border-blue-500 hover:text-blue-500 hover:bg-blue-50/50 dark:hover:bg-blue-900/20 transition-all group"
                 type="button"
               >
                 <Plus className="w-5 h-5 group-hover:scale-110 transition-transform" />
