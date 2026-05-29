@@ -5,9 +5,9 @@ import { Task } from '../types';
 interface TaskCardProps {
   task: Task;
   onEdit: (task: Task) => void;
-  dragAttributes?: React.HTMLAttributes<HTMLButtonElement>;
-  dragListeners?: React.HTMLAttributes<HTMLButtonElement>;
-  setDragHandleRef?: (element: HTMLButtonElement | null) => void;
+  dragAttributes?: React.HTMLAttributes<HTMLDivElement>;
+  dragListeners?: React.HTMLAttributes<HTMLDivElement>;
+  setDragHandleRef?: (element: HTMLDivElement | null) => void;
   isDragging?: boolean;
   style?: React.CSSProperties;
 }
@@ -50,25 +50,23 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 
   return (
     <div
+      ref={setDragHandleRef}
       style={style}
       onClick={() => onEdit(task)}
-      className={`group p-3 rounded-lg border hover:shadow-md transition-all cursor-pointer relative ${cardStyle} ${
+      className={`group p-3 rounded-lg border hover:shadow-md transition-all cursor-pointer active:cursor-grabbing touch-none relative ${cardStyle} ${
         isDragging ? 'opacity-40 ring-2 ring-blue-400 shadow-lg scale-[0.98]' : ''
       }`}
+      {...dragAttributes}
+      {...dragListeners}
     >
       <div className="flex justify-between items-start mb-2 gap-2">
         <div className="flex items-start gap-2 overflow-hidden w-full">
-          <button
-            ref={setDragHandleRef}
-            type="button"
-            aria-label={`拖曳任務「${task.title}」`}
-            onClick={(event) => event.stopPropagation()}
-            className="-ml-1 mt-0.5 p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700 dark:hover:text-blue-300 cursor-grab active:cursor-grabbing touch-none focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-            {...dragAttributes}
-            {...dragListeners}
+          <div
+            aria-hidden="true"
+            className="-ml-1 mt-0.5 p-1 rounded text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-300 cursor-grab active:cursor-grabbing"
           >
             <GripVertical className="w-4 h-4" />
-          </button>
+          </div>
           <span className="text-xl flex-shrink-0 leading-tight mt-0.5">{task.icon || '📝'}</span>
           <h3 className="font-bold text-slate-800 dark:text-slate-100 text-base leading-tight break-words pt-0.5 w-full">
             {task.title}

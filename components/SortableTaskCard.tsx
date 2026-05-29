@@ -38,8 +38,8 @@ export const SortableTaskCard: React.FC<SortableTaskCardProps> = ({ task, onEdit
         task={task}
         onEdit={onEdit}
         setDragHandleRef={setActivatorNodeRef}
-        dragAttributes={attributes as React.HTMLAttributes<HTMLButtonElement>}
-        dragListeners={listeners as React.HTMLAttributes<HTMLButtonElement>}
+        dragAttributes={attributes as React.HTMLAttributes<HTMLDivElement>}
+        dragListeners={listeners as React.HTMLAttributes<HTMLDivElement>}
         isDragging={isDragging}
       />
     </div>
