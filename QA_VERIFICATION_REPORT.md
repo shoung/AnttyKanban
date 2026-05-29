@@ -1,117 +1,27 @@
 # AnttyKanban QA 驗證報告
 
-## 結論
+## 本次 QA：卡片留言與時間戳功能
+
+### 結論
 
 **整體結果：PASS**
 
-本次 QA 以程式碼審查、git diff 檢查與實際 npm scripts 執行驗證為主。DnD 實作已改用 `@dnd-kit`，並涵蓋同欄排序、跨欄移動、空欄 drop、handle-only drag、拖曳中視覺回饋、鍵盤 Sensor 與基本 touch/mobile 處理。`typecheck` / `lint` / `format` scripts 已補上，且 `npm run typecheck`、`npm run lint`、`npm run build` 均通過。
+本次針對「每張卡片內，使用者可以相互留言，留言時要紀錄下時間戳」進行程式碼審查、diff 驗證與實際建置檢查。已確認留言資料模型、舊資料 normalize、新增/編輯任務預設值、Modal 新增留言流程、作者與本地化時間顯示、ISO timestamp 寫入、既有任務即時 onSave/Firestore 寫回、TaskCard 留言數量顯示，以及圖片、tags、assignee、日期、人天與 DnD 相關既有功能未被破壞。
 
-未發現阻斷性問題；僅有 Vite chunk size warning 與幾個可再精進的非阻斷觀察項目。
+未發現阻斷性問題；`npm run build` 僅有既有 Vite chunk size warning，屬非阻斷。
 
-## 驗證範圍
+### 驗證範圍
 
 檢查檔案：
 
+- `types.ts`
 - `App.tsx`
+- `components/TaskModal.tsx`
+- `components/TaskCard.tsx`
 - `components/KanbanColumn.tsx`
 - `components/SortableTaskCard.tsx`
-- `components/TaskCard.tsx`
-- `types.ts`
-- `package.json`
-- `eslint.config.js`
-- `.prettierrc`
 
-額外觀察：
-
-- `components/TaskModal.tsx`：確認任務新增、編輯、刪除入口仍存在。
-- `package-lock.json`：因 `@dnd-kit` / ESLint / Prettier 相依套件更新而變更。
-
-## 需求對照
-
-### 1. 仿造成熟 Drag & Drop 函式庫體驗
-
-結果：**PASS**
-
-已確認使用 `@dnd-kit`，且關鍵元件與設定存在：
-
-- `DndContext`：存在於 `App.tsx`。
-- `PointerSensor`：存在於 `App.tsx`。
-- `PointerSensor` activation distance：`distance: 8` 已設定。
-- `KeyboardSensor`：存在於 `App.tsx`。
-- `sortableKeyboardCoordinates`：已作為 `KeyboardSensor` 的 `coordinateGetter`。
-- `SortableContext`：存在於 `components/KanbanColumn.tsx`。
-- `useSortable`：存在於 `components/SortableTaskCard.tsx`。
-- `useDroppable`：存在於 `components/KanbanColumn.tsx`。
-- `DragOverlay`：存在於 `App.tsx`。
-
-功能面檢查：
-
-- 同欄排序：**PASS**  
-  `handleDragEnd` 會依 active / over 重新組合同欄任務並重設 `order`。
-
-- 跨欄移動：**PASS**  
-  `handleDragEnd` 會辨識 `targetColumnId`，更新 moved task 的 `columnId`，並 normalize 來源欄與目標欄任務順序。
-
-- 空欄 drop：**PASS**  
-  `KanbanColumn` 使用 `useDroppable({ id: column.id })`，空欄仍可作為 drop target；空狀態文案會在拖曳時顯示「放開即可移至此欄」。
-
-- Handle-only drag：**PASS**  
-  `TaskCard` 的 DnD attributes/listeners 掛在 Grip handle button 上；卡片本體仍保留 `onClick={() => onEdit(task)}` 作為編輯入口。
-
-- 拖曳中視覺回饋：**PASS**  
-  包含 active task opacity/ring/scale、欄位 `isOver` ring/background、空欄提示、非空欄 drop hint，以及 `DragOverlay`。
-
-- 拖曳動畫：**PASS**  
-  `useSortable` 使用 `transform` / `transition`，`DragOverlay` 有 `dropAnimation`。
-
-- 鍵盤可及性：**PASS**  
-  已使用 `KeyboardSensor` + `sortableKeyboardCoordinates`，handle button 有 `aria-label` 與 focus-visible ring。
-
-- Mobile / touch 相關處理：**PASS**  
-  drag handle 有 `touch-none`，PointerSensor 使用 distance 8，可降低誤觸啟動拖曳。
-
-### 2. 補 scripts：typecheck / lint / format
-
-結果：**PASS**
-
-`package.json` 已新增：
-
-- `typecheck`: `tsc --noEmit`
-- `lint`: `eslint .`
-- `format`: `prettier --write .`
-
-並新增：
-
-- `eslint.config.js`
-- `.prettierrc`
-
-ESLint 設定包含 TypeScript、React Hooks、React Refresh 規則；Prettier 設定可正常支援專案格式化需求。
-
-### 3. 既有功能回歸檢查
-
-結果：**PASS**
-
-- 任務點擊編輯：**PASS**  
-  `TaskCard` 保留卡片本體 `onClick` 開啟編輯；drag handle 會 `stopPropagation()` 避免點 handle 時誤開 modal。
-
-- 任務刪除：**PASS**  
-  `deleteTask` 保留於 `App.tsx`，並透過 `TaskModal` 的 `onDelete={deleteTask}` 使用。TaskCard 本身不顯示刪除按鈕，但現有刪除流程仍在 modal 中。
-
-- 任務新增：**PASS**  
-  欄位 header 加號與欄底「新建卡片」按鈕皆呼叫 `onAddTask(column.id)`；新增時會計算目標欄下一個 `order`。
-
-- 欄位編輯：**PASS**  
-  欄位標題點擊編輯、blur / Enter commit、欄位顏色修改、欄位刪除皆保留於 `KanbanColumn` 與 `App.tsx` handlers。
-
-- 專案/欄位/登入基本流程：**PASS**  
-  專案新增、刪除、改名、登入/登出與 Firestore sync 相關 handlers 仍存在。
-
-- Task order normalize：**PASS**  
-  新增 `order` 欄位，讀取遠端資料、初始化資料、更新 projects 時皆會透過 `normalizeProjects` / `normalizeTaskOrders` 依欄位重新排序並補齊連續 order。這對舊資料缺少 `order` 的情境合理。
-
-## 實際測試結果
-
-已在 `/Users/macminix/work/AnttyKanban` 執行：
+執行指令：
 
 ```bash
 npm run typecheck
@@ -119,37 +29,128 @@ npm run lint
 npm run build
 ```
 
-結果：
+### 需求對照
+
+#### 1. `TaskComment` 型別至少有 id/text/authorName/authorId/createdAt
+
+結果：**PASS**
+
+`types.ts` 已新增：
+
+- `id: string`
+- `text: string`
+- `authorName: string`
+- `authorId: string`
+- `createdAt: string`
+
+#### 2. `Task` 有 `comments`
+
+結果：**PASS**
+
+`types.ts` 的 `Task` 介面已新增：
+
+- `comments: TaskComment[]`
+
+#### 3. 舊資料無 comments 時會 normalize 成 []
+
+結果：**PASS**
+
+`App.tsx` 已新增 `normalizeTask()`，會將：
+
+- `tags` 非陣列時補為 `[]`
+- `comments` 非陣列時補為 `[]`
+
+且 `normalizeTaskOrders()` 會先對所有 task 執行 `normalizeTask()`；Firestore 讀取、初始化、更新保存都會經過 `normalizeProjects()` / `normalizeTaskOrders()`。
+
+#### 4. 初始任務與新任務 comments 預設 []
+
+結果：**PASS**
+
+已確認：
+
+- `INITIAL_PROJECTS` 內既有初始任務 `t1`、`t2` 均有 `comments: []`。
+- `TaskModal` 新建任務 form state 預設 `comments: []`。
+- `App.tsx` 建立新任務時使用 `comments: taskData.comments || []`。
+
+#### 5. Modal 內可新增留言、空白不可送出、顯示作者與本地化時間戳、留言有 ISO timestamp
+
+結果：**PASS**
+
+`components/TaskModal.tsx` 已確認：
+
+- 新增 `commentInput` state 與留言 textarea。
+- `handleAddComment()` 會 `trim()` 留言內容；空白或未登入使用者會直接 return。
+- 「送出留言」按鈕在 `!commentInput.trim()` 或 `!currentUser` 時 disabled。
+- 新留言包含：
+  - `id: comment-${Date.now()}-${...}`
+  - `text`
+  - `authorId: currentUser.uid`
+  - `authorName: currentUser.displayName || currentUser.email || '未知使用者'`
+  - `createdAt: new Date().toISOString()`
+- UI 顯示留言作者名稱。
+- UI 使用 `new Date(createdAt).toLocaleString('zh-TW', { hour12: false })` 顯示本地化時間戳。
+- 留言依 `createdAt` 由舊到新排序顯示。
+
+#### 6. 既有任務送出留言會寫回 onSave/Firestore，不必關閉 modal
+
+結果：**PASS**
+
+`TaskModal` 的 `handleAddComment()` 在 `initialData` 存在時會直接呼叫 `onSave(nextFormData)`，沒有呼叫 `onClose()`，因此既有任務送出留言後不需關閉 modal。
+
+`App.tsx` 的 `saveTask()` 會更新目標 task，並呼叫 `updateProjects(newProjects)`；`updateProjects()` 會 normalize 後更新本地 state，且使用者登入時會 `setDoc(..., { merge: true })` 寫回 Firestore。
+
+#### 7. TaskCard 顯示留言數量
+
+結果：**PASS**
+
+`components/TaskCard.tsx` 已新增：
+
+- `MessageCircle` icon。
+- `const commentCount = task.comments?.length || 0;`
+- 當 `commentCount > 0` 時顯示「N 則留言」。
+
+#### 8. 不破壞既有圖片/tags/assignee/date/manDays/DnD
+
+結果：**PASS**
+
+程式碼審查結果：
+
+- 圖片：`TaskModal` 圖片上傳、預覽、移除流程保留；`TaskCard` 仍顯示 `task.imageUrl`。
+- tags：新增/移除 tag 流程保留；`TaskCard` 仍顯示 tags；normalize 仍補 `tags: []`。
+- assignee：Modal input 與 TaskCard 顯示保留。
+- date：起始日/截止日 input 與 TaskCard 截止日顯示、急迫樣式保留。
+- manDays：Modal input 與 TaskCard 顯示保留。
+- DnD：`TaskCard` 仍接收 drag handle props；`SortableTaskCard` 仍透過 `useSortable` 傳入 `setActivatorNodeRef`、attributes/listeners；`KanbanColumn` 仍使用 `useDroppable` / `SortableContext`；`App.tsx` 的 `DndContext`、Sensors、DragOverlay 與 `handleDragEnd` 邏輯保留。
+
+### 實際測試結果
+
+已於 `/Users/macminix/work/AnttyKanban` 執行以下檢查：
 
 - `npm run typecheck`：**PASS**
+  - `tsc --noEmit` 成功，exit code 0。
 - `npm run lint`：**PASS**
+  - `eslint .` 成功，exit code 0。
 - `npm run build`：**PASS**
+  - Vite build 成功，exit code 0。
+  - 輸出檔案：`dist/index.html`、`dist/assets/index-DpwBNjBZ.js`。
+  - 非阻斷 warning：chunk size 超過 500 kB，訊息建議 dynamic import / manualChunks / chunkSizeWarningLimit。
 
-Build 輸出：
+### 問題清單
 
-- Vite build 成功。
-- 產生 chunk size warning：`dist/assets/index-*.js` 約 775 kB，超過 500 kB 建議門檻。
-- 此為非阻斷 warning，與主 agent 先前確認一致。
-
-## 問題清單
-
-### 阻斷問題
+#### 阻斷問題
 
 無。
 
-### 非阻斷觀察 / 建議
+#### 非阻斷觀察 / 建議
 
-1. **跨欄拖曳期間的 live placeholder 可再更接近成熟 DnD 體驗**  
-   目前同欄排序可透過 `useSortable` transform/transition 呈現排序動畫；跨欄拖曳主要靠欄位 highlight、空欄提示、非空欄底部 hint 與 `DragOverlay`。若要更接近 Trello / Jira 類成熟體驗，可在 `onDragOver` 暫時更新 active task 所在欄位，讓目標欄在拖曳中即時騰出插入位置。
+1. **Build chunk size warning**  
+   `dist/assets/index-DpwBNjBZ.js` 約 779 kB，超過 Vite 預設 500 kB 建議門檻。此為建置警告，非本次留言功能造成的阻斷問題。
 
-2. **同欄拖曳到某張卡片時採「插入到 over task 前方」邏輯**  
-   `insertionIndex` 目前使用 `overTaskIndex`。這是合理排序策略之一，但若期望依滑鼠位置判斷插入前/後，可再依 collision data 或 pointer position 細分。
+2. **留言功能目前依登入使用者資訊建立作者資料**  
+   App 目前登入後才進入看板，因此合理；若未來支援未登入瀏覽/本機模式下留言，需要另行定義匿名留言策略。
 
-3. **Build chunk size warning**  
-   非阻斷。若後續重視載入效能，可考慮 code splitting 或 manualChunks。
+### 最終判定
 
-## 最終判定
+**PASS，可交由主 agent 進行後續流程。**
 
-**PASS，可交由主 agent 進行後續 commit / push 流程。**
-
-本 QA 未進行 commit 或 push。
+本 QA 僅更新 `QA_VERIFICATION_REPORT.md`，未進行 commit 或 push。

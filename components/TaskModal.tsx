@@ -1,9 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, Calendar as CalendarIcon, Upload, Loader2 } from 'lucide-react';
+import {
+  X,
+  Plus,
+  Trash2,
+  Calendar as CalendarIcon,
+  Upload,
+  Loader2,
+  MessageCircle,
+  Send,
+} from 'lucide-react';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Task, Column } from '../types';
 import { Button } from './Button';
 import { storage } from '../firebase';
+
+interface CurrentUserInfo {
+  uid: string;
+  displayName?: string | null;
+  email?: string | null;
+}
 
 interface TaskModalProps {
   isOpen: boolean;
@@ -13,6 +28,7 @@ interface TaskModalProps {
   initialData?: Task | null;
   columns: Column[];
   activeColumnId?: string;
+  currentUser?: CurrentUserInfo | null;
 }
 
 const EMOJI_OPTIONS = ['🐜', '📝', '🐛', '✨', '🚀', '🎨', '🔥', '📅', '💻', '📢', '🔒', '📈'];
@@ -25,6 +41,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   initialData,
   columns,
   activeColumnId,
+  currentUser,
 }) => {
   const [formData, setFormData] = useState<Partial<Task>>({
     title: '',
@@ -35,15 +52,17 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     tags: [],
     columnId: '',
     icon: '🐜',
+    comments: [],
   });
 
   const [tagInput, setTagInput] = useState('');
+  const [commentInput, setCommentInput] = useState('');
   const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       if (initialData) {
-        setFormData({ ...initialData });
+        setFormData({ ...initialData, comments: initialData.comments || [] });
       } else {
         setFormData({
           title: '',
@@ -54,9 +73,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           tags: [],
           columnId: activeColumnId || columns[0]?.id || '',
           icon: '🐜',
+          comments: [],
         });
       }
       setTagInput('');
+      setCommentInput('');
     }
   }, [isOpen, initialData, activeColumnId, columns]);
 
@@ -109,6 +130,39 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
   const removeImage = () => {
     setFormData((prev) => ({ ...prev, imageUrl: '', imagePath: '' }));
+  };
+
+  const formatCommentTime = (createdAt: string) =>
+    new Date(createdAt).toLocaleString('zh-TW', { hour12: false });
+
+  const sortedComments = [...(formData.comments || [])].sort((a, b) =>
+    a.createdAt.localeCompare(b.createdAt),
+  );
+
+  const handleAddComment = () => {
+    const text = commentInput.trim();
+    if (!text || !currentUser) return;
+
+    const nextFormData: Partial<Task> = {
+      ...formData,
+      comments: [
+        ...(formData.comments || []),
+        {
+          id: `comment-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          text,
+          authorId: currentUser.uid,
+          authorName: currentUser.displayName || currentUser.email || '未知使用者',
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    };
+
+    setFormData(nextFormData);
+    setCommentInput('');
+
+    if (initialData) {
+      onSave(nextFormData);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -332,6 +386,69 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   </button>
                 </span>
               ))}
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
+            <div className="flex items-center justify-between mb-3">
+              <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+                <MessageCircle className="w-4 h-4" />
+                留言 ({sortedComments.length})
+              </label>
+              <span className="text-[11px] text-slate-400">由舊到新排序</span>
+            </div>
+
+            <div className="space-y-3 max-h-60 overflow-y-auto pr-1 mb-3">
+              {sortedComments.length > 0 ? (
+                sortedComments.map((comment) => (
+                  <div
+                    key={comment.id}
+                    className="rounded-lg bg-slate-50 dark:bg-slate-800/70 border border-slate-100 dark:border-slate-700 p-3"
+                  >
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                      <span className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">
+                        {comment.authorName || '未知使用者'}
+                      </span>
+                      <time className="text-[11px] text-slate-400 flex-shrink-0">
+                        {formatCommentTime(comment.createdAt)}
+                      </time>
+                    </div>
+                    <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words">
+                      {comment.text}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <div className="text-sm text-slate-400 text-center py-4 border border-dashed border-slate-200 dark:border-slate-700 rounded-lg">
+                  尚無留言，成為第一個留言的人吧。
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <textarea
+                value={commentInput}
+                onChange={(e) => setCommentInput(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-md bg-transparent text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-20 resize-y"
+                placeholder={currentUser ? '輸入留言...' : '請先登入後再留言'}
+                disabled={!currentUser}
+              />
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleAddComment}
+                  disabled={!commentInput.trim() || !currentUser}
+                >
+                  <Send className="w-4 h-4 mr-2" />
+                  送出留言
+                </Button>
+              </div>
+              {!initialData && sortedComments.length > 0 && (
+                <p className="text-[11px] text-slate-400 text-right">
+                  新任務的留言會在儲存任務後一併同步。
+                </p>
+              )}
             </div>
           </div>
 

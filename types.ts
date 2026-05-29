@@ -1,3 +1,11 @@
+export interface TaskComment {
+  id: string;
+  text: string;
+  authorName: string;
+  authorId: string;
+  createdAt: string;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -12,6 +20,7 @@ export interface Task {
   icon: string;
   imageUrl?: string;
   imagePath?: string;
+  comments: TaskComment[];
 }
 
 export interface Column {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, Clock, GripVertical, Hash, User } from 'lucide-react';
+import { Calendar, Clock, GripVertical, Hash, MessageCircle, User } from 'lucide-react';
 import { Task } from '../types';
 
 interface TaskCardProps {
@@ -45,6 +45,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   };
 
   const cardStyle = getUrgencyStyles(task.endDate);
+  const commentCount = task.comments?.length || 0;
 
   return (
     <div
@@ -121,6 +122,13 @@ export const TaskCard: React.FC<TaskCardProps> = ({
             <span>{task.manDays}d</span>
           </div>
         </div>
+
+        {commentCount > 0 && (
+          <div className="inline-flex items-center gap-1.5 mt-2 px-2 py-1 rounded-full bg-slate-100 text-slate-600 dark:bg-slate-700/70 dark:text-slate-300 text-[11px] font-medium">
+            <MessageCircle className="w-3 h-3" />
+            <span>{commentCount} 則留言</span>
+          </div>
+        )}
       </div>
     </div>
   );

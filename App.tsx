@@ -54,8 +54,15 @@ const getTomorrow = () => {
 const sortTasks = (tasksToSort: Task[]) =>
   [...tasksToSort].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.id.localeCompare(b.id));
 
+const normalizeTask = (task: Task): Task => ({
+  ...task,
+  tags: Array.isArray(task.tags) ? task.tags : [],
+  comments: Array.isArray(task.comments) ? task.comments : [],
+});
+
 const normalizeTaskOrders = (tasksToNormalize: Task[]): Task[] => {
-  const grouped = tasksToNormalize.reduce<Record<string, Task[]>>((acc, task) => {
+  const normalizedTasks = tasksToNormalize.map(normalizeTask);
+  const grouped = normalizedTasks.reduce<Record<string, Task[]>>((acc, task) => {
     acc[task.columnId] = [...(acc[task.columnId] || []), task];
     return acc;
   }, {});
@@ -67,7 +74,7 @@ const normalizeTaskOrders = (tasksToNormalize: Task[]): Task[] => {
     });
   });
 
-  return tasksToNormalize.map((task) => normalizedById.get(task.id) || { ...task, order: 0 });
+  return normalizedTasks.map((task) => normalizedById.get(task.id) || { ...task, order: 0 });
 };
 
 const normalizeProjects = (projectsToNormalize: Project[]): Project[] =>
@@ -108,6 +115,7 @@ const INITIAL_PROJECTS: Project[] = [
         columnId: 'c1',
         order: 0,
         icon: '📢',
+        comments: [],
       },
       {
         id: 't2',
@@ -120,6 +128,7 @@ const INITIAL_PROJECTS: Project[] = [
         columnId: 'c2',
         order: 0,
         icon: '🎨',
+        comments: [],
       },
     ],
   },
@@ -412,6 +421,7 @@ const App: React.FC = () => {
           columnId: targetColumnId,
           order: nextOrder,
           icon: taskData.icon || '🐜',
+          comments: taskData.comments || [],
         };
         if (taskData.imageUrl) {
           newTask.imageUrl = taskData.imageUrl;
@@ -885,6 +895,15 @@ const App: React.FC = () => {
         initialData={editingTask}
         columns={columns}
         activeColumnId={activeColumnForNewTask}
+        currentUser={
+          user
+            ? {
+                uid: user.uid,
+                displayName: user.displayName,
+                email: user.email,
+              }
+            : null
+        }
       />
     </div>
   );
