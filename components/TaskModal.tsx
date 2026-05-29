@@ -7,6 +7,7 @@ import {
   Upload,
   Loader2,
   MessageCircle,
+  Pencil,
   Send,
 } from 'lucide-react';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -60,6 +61,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingCommentText, setEditingCommentText] = useState('');
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [isImagePreviewOpen, setIsImagePreviewOpen] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -82,6 +84,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setCommentInput('');
       setEditingCommentId(null);
       setEditingCommentText('');
+      setIsImagePreviewOpen(false);
     }
   }, [isOpen, initialData, activeColumnId, columns]);
 
@@ -123,6 +126,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       const imageRef = ref(storage, imagePath);
       await uploadBytes(imageRef, file, { contentType: file.type });
       const imageUrl = await getDownloadURL(imageRef);
+      setIsImagePreviewOpen(false);
       setFormData((prev) => ({ ...prev, imageUrl, imagePath }));
     } catch (error) {
       console.error('Image upload failed:', error);
@@ -133,8 +137,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   };
 
   const removeImage = () => {
+    setIsImagePreviewOpen(false);
     setFormData((prev) => ({ ...prev, imageUrl: '', imagePath: '' }));
   };
+
+  const imagePreviewAlt = formData.title ? `${formData.title} 附圖預覽` : '任務圖片預覽';
 
   const formatCommentTime = (createdAt: string) =>
     new Date(createdAt).toLocaleString('zh-TW', { hour12: false });
@@ -288,11 +295,19 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
             {formData.imageUrl && (
               <div className="relative mb-3 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
-                <img
-                  src={formData.imageUrl}
-                  alt="任務圖片預覽"
-                  className="w-full max-h-56 object-cover bg-slate-100 dark:bg-slate-800"
-                />
+                <button
+                  type="button"
+                  onClick={() => setIsImagePreviewOpen(true)}
+                  className="block w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset"
+                  aria-label="放大檢視任務圖片"
+                  title="放大檢視任務圖片"
+                >
+                  <img
+                    src={formData.imageUrl}
+                    alt={imagePreviewAlt}
+                    className="w-full max-h-56 object-cover bg-slate-100 dark:bg-slate-800"
+                  />
+                </button>
                 <button
                   type="button"
                   onClick={removeImage}
@@ -476,20 +491,24 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                         </div>
 
                         {isOwnComment && !isEditingComment && (
-                          <div className="flex flex-shrink-0 items-center gap-2 text-xs">
+                          <div className="flex flex-shrink-0 items-center gap-1">
                             <button
                               type="button"
                               onClick={() => handleStartEditComment(comment)}
-                              className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                              aria-label="編輯留言"
+                              title="編輯留言"
+                              className="p-1 rounded text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-slate-700 transition-colors"
                             >
-                              編輯
+                              <Pencil className="w-3.5 h-3.5" />
                             </button>
                             <button
                               type="button"
                               onClick={() => handleDeleteComment(comment.id)}
-                              className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                              aria-label="刪除留言"
+                              title="刪除留言"
+                              className="p-1 rounded text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-slate-700 transition-colors"
                             >
-                              刪除
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         )}
@@ -590,6 +609,21 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           </div>
         </form>
       </div>
+
+      {isImagePreviewOpen && formData.imageUrl && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-4 cursor-zoom-out"
+          onClick={() => setIsImagePreviewOpen(false)}
+          role="presentation"
+        >
+          <img
+            src={formData.imageUrl}
+            alt={imagePreviewAlt}
+            className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg shadow-2xl cursor-default"
+            onClick={(event) => event.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 };
