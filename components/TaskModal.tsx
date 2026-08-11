@@ -3,7 +3,6 @@ import {
   X,
   Plus,
   Trash2,
-  Calendar as CalendarIcon,
   Upload,
   Loader2,
   MessageCircle,
@@ -14,6 +13,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Task, Column, TaskComment } from '../types';
 import { Button } from './Button';
 import { storage } from '../firebase';
+import { getTaskCardColorOption, TASK_CARD_COLOR_OPTIONS } from './taskCardColors';
 
 interface CurrentUserInfo {
   uid: string;
@@ -32,8 +32,6 @@ interface TaskModalProps {
   currentUser?: CurrentUserInfo | null;
 }
 
-const EMOJI_OPTIONS = ['🐜', '📝', '🐛', '✨', '🚀', '🎨', '🔥', '📅', '💻', '📢', '🔒', '📈'];
-
 export const TaskModal: React.FC<TaskModalProps> = ({
   isOpen,
   onClose,
@@ -46,13 +44,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 }) => {
   const [formData, setFormData] = useState<Partial<Task>>({
     title: '',
-    startDate: '',
-    endDate: '',
-    manDays: 0,
+    description: '',
     assignee: '',
     tags: [],
     columnId: '',
-    icon: '🐜',
+    color: 'white',
     comments: [],
   });
 
@@ -66,17 +62,15 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       if (initialData) {
-        setFormData({ ...initialData, comments: initialData.comments || [] });
+        setFormData({ ...initialData, description: initialData.description || '', color: initialData.color || 'white', comments: initialData.comments || [] });
       } else {
         setFormData({
           title: '',
-          startDate: new Date().toISOString().split('T')[0],
-          endDate: '',
-          manDays: 1,
+          description: '',
           assignee: '',
           tags: [],
           columnId: activeColumnId || columns[0]?.id || '',
-          icon: '🐜',
+          color: 'white',
           comments: [],
         });
       }
@@ -90,7 +84,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
@@ -231,7 +225,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (isUploadingImage) return;
-    onSave(formData);
+    onSave({ ...formData, title: formData.title?.trim(), description: formData.description?.trim() });
     onClose();
   };
 
@@ -260,29 +254,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-5">
-          {/* Icon Selection */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-              選擇圖示
-            </label>
-            <div className="flex flex-wrap gap-2 bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
-              {EMOJI_OPTIONS.map((emoji) => (
-                <button
-                  type="button"
-                  key={emoji}
-                  onClick={() => setFormData((prev) => ({ ...prev, icon: emoji }))}
-                  className={`w-9 h-9 flex items-center justify-center rounded-md text-xl transition-all ${
-                    formData.icon === emoji
-                      ? 'bg-blue-100 dark:bg-blue-900/50 ring-2 ring-blue-500 scale-110'
-                      : 'hover:bg-slate-200 dark:hover:bg-slate-700'
-                  }`}
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-          </div>
-
           <div>
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
               任務名稱
@@ -295,6 +266,38 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-md bg-transparent text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow"
               placeholder="輸入任務名稱..."
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">內容</label>
+            <textarea
+              name="description"
+              value={formData.description}
+              onChange={handleInputChange}
+              rows={5}
+              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-md bg-transparent text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow resize-y"
+              placeholder="輸入卡片內容..."
+            />
+          </div>
+
+          <div>
+            <span className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">卡片顏色</span>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="卡片顏色">
+              {TASK_CARD_COLOR_OPTIONS.map((option) => {
+                const isSelected = getTaskCardColorOption(formData.color).id === option.id;
+                return (
+                  <button
+                    type="button"
+                    key={option.id}
+                    onClick={() => setFormData((prev) => ({ ...prev, color: option.id }))}
+                    className={`w-6 h-6 rounded-full border transition-transform hover:scale-110 ${option.swatchClassName} ${isSelected ? 'ring-2 ring-slate-500 ring-offset-2 dark:ring-offset-slate-900' : ''}`}
+                    aria-label={`選擇${option.label}`}
+                    aria-pressed={isSelected}
+                    title={option.label}
+                  />
+                );
+              })}
+            </div>
           </div>
 
           <div>
@@ -352,55 +355,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             </label>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                起始日
-              </label>
-              <div className="relative">
-                <input
-                  type="date"
-                  name="startDate"
-                  value={formData.startDate}
-                  onChange={handleInputChange}
-                  className="w-full pl-3 pr-2 py-2 border border-slate-300 dark:border-slate-700 rounded-md bg-transparent text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                />
-                <CalendarIcon className="w-4 h-4 absolute right-3 top-2.5 text-slate-400 pointer-events-none" />
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                截止日
-              </label>
-              <div className="relative">
-                <input
-                  type="date"
-                  name="endDate"
-                  value={formData.endDate}
-                  onChange={handleInputChange}
-                  className="w-full pl-3 pr-2 py-2 border border-slate-300 dark:border-slate-700 rounded-md bg-transparent text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                />
-                <CalendarIcon className="w-4 h-4 absolute right-3 top-2.5 text-slate-400 pointer-events-none" />
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                人天 (Man-days)
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="0.5"
-                name="manDays"
-                value={formData.manDays}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-md bg-transparent text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
+          <div>
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                 執行者
               </label>
@@ -412,7 +367,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-md bg-transparent text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="誰負責?"
               />
-            </div>
           </div>
 
           <div>

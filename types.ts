@@ -10,18 +10,27 @@ export interface Task {
   id: string;
   title: string;
   description?: string;
-  startDate: string;
-  endDate: string;
-  manDays: number;
   tags: string[];
   assignee: string;
   columnId: string;
   order: number;
-  icon: string;
+  color?: TaskCardColor;
   imageUrl?: string;
   imagePath?: string;
   comments: TaskComment[];
 }
+
+export type TaskCardColor =
+  | 'white'
+  | 'gray'
+  | 'red'
+  | 'orange'
+  | 'yellow'
+  | 'green'
+  | 'blue'
+  | 'indigo'
+  | 'purple'
+  | 'pink';
 
 export interface Column {
   id: string;

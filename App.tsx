@@ -44,18 +44,13 @@ const createInitialColumns = (): Column[] => [
   { id: `c5-${Date.now()}`, title: '完成', color: '#22c55e' },
 ];
 
-const getToday = () => new Date().toISOString().split('T')[0];
-const getTomorrow = () => {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  return d.toISOString().split('T')[0];
-};
-
 const sortTasks = (tasksToSort: Task[]) =>
   [...tasksToSort].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.id.localeCompare(b.id));
 
 const normalizeTask = (task: Task): Task => ({
   ...task,
+  description: task.description || '',
+  color: task.color || 'white',
   tags: Array.isArray(task.tags) ? task.tags : [],
   comments: Array.isArray(task.comments) ? task.comments : [],
 });
@@ -107,27 +102,23 @@ const INITIAL_PROJECTS: Project[] = [
       {
         id: 't1',
         title: '專案啟動會議',
-        startDate: getToday(),
-        endDate: getTomorrow(),
-        manDays: 0.5,
+        description: '確認專案目標、時程與參與成員。',
         tags: ['會議', '管理'],
         assignee: 'Alice',
         columnId: 'c1',
         order: 0,
-        icon: '📢',
+        color: 'blue',
         comments: [],
       },
       {
         id: 't2',
         title: 'UI 設計草稿',
-        startDate: getToday(),
-        endDate: getToday(),
-        manDays: 2,
+        description: '完成核心流程的介面草稿。',
         tags: ['設計', 'Figma'],
         assignee: 'Bob',
         columnId: 'c2',
         order: 0,
-        icon: '🎨',
+        color: 'purple',
         comments: [],
       },
     ],
@@ -419,14 +410,12 @@ const App: React.FC = () => {
         const newTask: Task = {
           id: Date.now().toString(),
           title: taskData.title || 'New Task',
-          startDate: taskData.startDate || '',
-          endDate: taskData.endDate || '',
-          manDays: Number(taskData.manDays) || 0,
+          description: taskData.description || '',
           tags: taskData.tags || [],
           assignee: taskData.assignee || '',
           columnId: targetColumnId,
           order: nextOrder,
-          icon: taskData.icon || '🐜',
+          color: taskData.color || 'white',
           comments: taskData.comments || [],
         };
         if (taskData.imageUrl) {

@@ -1,6 +1,7 @@
 import React from 'react';
-import { Calendar, Clock, GripVertical, Hash, MessageCircle, User } from 'lucide-react';
+import { GripVertical, Hash, MessageCircle, User } from 'lucide-react';
 import { Task } from '../types';
+import { getTaskCardColorOption } from './taskCardColors';
 
 interface TaskCardProps {
   task: Task;
@@ -21,30 +22,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   isDragging = false,
   style,
 }) => {
-  const getUrgencyStyles = (endDateStr: string) => {
-    if (!endDateStr) return 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700';
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const end = new Date(endDateStr);
-    end.setHours(0, 0, 0, 0);
-
-    const diffTime = end.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    if (diffDays === 0) {
-      return 'bg-pink-50 dark:bg-pink-900/20 border-pink-200 dark:border-pink-800/50 shadow-sm';
-    }
-
-    if (diffDays === 1) {
-      return 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800/50 shadow-sm';
-    }
-
-    return 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 shadow-sm';
-  };
-
-  const cardStyle = getUrgencyStyles(task.endDate);
+  const colorOption = getTaskCardColorOption(task.color);
   const commentCount = task.comments?.length || 0;
   const imageAlt = task.title ? `${task.title} 附圖` : '任務附圖';
 
@@ -53,7 +31,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       ref={setDragHandleRef}
       style={style}
       onClick={() => onEdit(task)}
-      className={`group p-3 rounded-lg border hover:shadow-md transition-all cursor-pointer active:cursor-grabbing touch-none relative ${cardStyle} ${
+      className={`group p-3 rounded-lg border shadow-sm hover:shadow-md transition-all cursor-pointer active:cursor-grabbing touch-none relative ${colorOption.className} ${
         isDragging ? 'opacity-40 ring-2 ring-blue-400 shadow-lg scale-[0.98]' : ''
       }`}
       {...dragAttributes}
@@ -67,10 +45,16 @@ export const TaskCard: React.FC<TaskCardProps> = ({
           >
             <GripVertical className="w-4 h-4" />
           </div>
-          <span className="text-xl flex-shrink-0 leading-tight mt-0.5">{task.icon || '📝'}</span>
-          <h3 className="font-bold text-slate-800 dark:text-slate-100 text-base leading-tight break-words pt-0.5 w-full">
-            {task.title}
-          </h3>
+          <div className="min-w-0 w-full">
+            <h3 className="font-bold text-slate-800 dark:text-slate-100 text-base leading-tight break-words pt-0.5">
+              {task.title}
+            </h3>
+            {task.description && (
+              <p className="mt-1 max-h-10 overflow-hidden whitespace-pre-wrap break-words text-xs leading-5 text-slate-600 dark:text-slate-300">
+                {task.description}
+              </p>
+            )}
+          </div>
         </div>
       </div>
 
@@ -101,25 +85,6 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         <div className="flex items-center text-xs text-slate-500 dark:text-slate-400 gap-2">
           <User className="w-3 h-3" />
           <span className="truncate max-w-[100px]">{task.assignee || '未指派'}</span>
-        </div>
-
-        <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 pt-2 border-t border-slate-200/50 dark:border-slate-700/50">
-          <div className="flex items-center gap-1.5" title="Start - End Date">
-            <Calendar className="w-3 h-3" />
-            <span
-              className={
-                task.endDate === new Date().toISOString().split('T')[0]
-                  ? 'text-pink-600 dark:text-pink-400 font-medium'
-                  : ''
-              }
-            >
-              {task.endDate.slice(5) || '--/--'}
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5" title="Man Days">
-            <Clock className="w-3 h-3" />
-            <span>{task.manDays}d</span>
-          </div>
         </div>
 
         {commentCount > 0 && (
