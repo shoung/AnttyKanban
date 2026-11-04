@@ -55,3 +55,11 @@ References: https://developers.openai.com/plugins/build/auth and https://learn.c
 Review this code PR, then separately approve: (1) WIF/provider/service-account/IAM changes; (2) OAuth client, consent and Calendar API setup; (3) secret creation/storage and production deployment; (4) the user's actual Calendar grant and any AI persistent-access token/provider connection. Merely approving the code PR does not approve those security changes.
 
 After deployment verify unauthenticated endpoints fail safely, ordinary Firebase login/boards still work, server credentials can access only the intended project, and tokens/secrets never appear in logs or bundles. Keep Calendar and MCP disabled until their prerequisites are verified. No external setting or credential was created by this patch.
+
+## Vercel CommonJS / ESM compatibility regression
+
+The production Node 26 instrumentation rejected synchronous `require('jose')` inside `jwks-rsa@4.1.0`, although vanilla Node 24 allowed it. The repository carries a narrow, reviewed `patch-package` patch: remove that top-level require and use `await import('jose')` inside the existing asynchronous key-loading function and its callback-based Passport integration. JOSE remains the supported v6; no old cryptography package is substituted. `postinstall` applies the patch with `--error-on-fail --error-on-warn`, so upstream version/patch drift fails the build rather than silently removing the repair.
+
+Native regression processes explicitly disable experimental `require(ESM)`, exercise actual emitted API handlers, and check RSA/EC JWK public-key conversion and rejection of private/encryption-only keys. CI runs both Node 22 and Node 26. This models the observed incompatibility but is not a substitute for testing the deployed Vercel functions after each rollout. Remove the patch once the upstream dependency or verified platform runtime handles asynchronous ESM loading correctly.
+
+Build installation must include devDependencies, because patch-package is a development build tool. An omit-dev production installation is intentionally unsupported and fails rather than shipping unpatched dependencies. Vercel builds use the standard npm install/ci path with build dependencies present.
