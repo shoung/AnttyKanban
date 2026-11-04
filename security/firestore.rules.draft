@@ -1,0 +1,56 @@
+// REVIEW ONLY. Do not deploy before exporting/comparing the existing deployed rules.
+// Replacing live rules with this file denies all legacy shared paths by design.
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function own(uid) { return request.auth != null && request.auth.uid == uid; }
+    function envelope(uid) {
+      return request.resource.data.ownerUid == uid
+        && request.resource.data.schemaVersion == 1
+        && request.resource.data.revision is int;
+    }
+    function revisionCreate() { return request.resource.data.revision == 1; }
+    function revisionUpdate(uid) {
+      return resource.data.ownerUid == uid
+        && request.resource.data.revision == resource.data.revision + 1;
+    }
+    match /users/{uid}/boards/{boardId} {
+      function validBoard() {
+        return boardId == 'default'
+          && envelope(uid)
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.keys().hasOnly(['ownerUid','projects','revision','schemaVersion','updatedAt'])
+          && request.resource.data.projects is list
+          && request.resource.data.projects.size() <= 200;
+      }
+      allow read: if own(uid);
+      allow create: if own(uid) && validBoard() && revisionCreate();
+      allow update: if own(uid) && validBoard() && revisionUpdate(uid);
+      // Projects are edited inside the board. No whole-workspace client deletion.
+      allow delete: if false;
+    }
+    match /users/{uid}/mindmaps/{mapId} {
+      function validMap() {
+        return envelope(uid)
+          && request.resource.data.updatedAt is string
+          && request.resource.data.updatedAt.size() == 24
+          && request.resource.data.keys().hasOnly(['ownerUid','id','title','rootJson','revision','schemaVersion','updatedAt'])
+          && request.resource.data.id == mapId
+          && request.resource.data.title is string
+          && request.resource.data.title.size() > 0
+          && request.resource.data.title.size() <= 200
+          && request.resource.data.rootJson is string
+          && request.resource.data.rootJson.size() > 0
+          && request.resource.data.rootJson.size() <= 512000;
+      }
+      allow read: if own(uid);
+      allow create: if own(uid) && validMap() && revisionCreate();
+      allow update: if own(uid) && validMap() && revisionUpdate(uid);
+      // Delete is performed by authenticated server service with revision checks.
+      allow delete: if false;
+    }
+    // Includes old boards/default, calendar credentials, OAuth states and MCP tokens.
+    // Admin SDK bypasses rules: server endpoints MUST independently enforce owner/scopes.
+    match /{path=**} { allow read, write: if false; }
+  }
+}

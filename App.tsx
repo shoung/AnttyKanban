@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { lazy, Suspense, useState, useEffect, useMemo, useRef } from 'react';
 import {
   DndContext,
   DragEndEvent,
@@ -31,9 +31,15 @@ import { KanbanColumn } from './components/KanbanColumn';
 import { TaskCard } from './components/TaskCard';
 import { TaskModal } from './components/TaskModal';
 import { Button } from './components/Button';
-import { auth, db, googleProvider } from './firebase';
+import { auth, googleProvider } from './firebase';
 import { signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { subscribeBoard, saveBoard } from './services/boardStore';
+import { AccountEpoch, type AccountTicket, type BoardState } from './services/boardSafety';
+
+import WorkspaceTabs, { type WorkspaceKind } from './components/WorkspaceTabs';
+const MindmapWorkspace = lazy(() => import('./components/MindmapWorkspace'));
+const CalendarWorkspace = lazy(() => import('./components/CalendarWorkspace'));
+const AgentAccess = lazy(() => import('./components/AgentAccess'));
 
 // Initial Data Generators
 const createInitialColumns = (): Column[] => [
@@ -87,52 +93,23 @@ const getTaskColumnId = (taskId: string, taskList: Task[]) =>
 const EMPTY_COLUMNS: Column[] = [];
 const EMPTY_TASKS: Task[] = [];
 
-const INITIAL_PROJECTS: Project[] = [
-  {
-    id: 'p1',
-    name: '產品開發專案',
-    columns: [
-      { id: 'c1', title: '預備', color: '#64748b' },
-      { id: 'c2', title: '執行中', color: '#3b82f6' },
-      { id: 'c3', title: '待審核', color: '#eab308' },
-      { id: 'c4', title: '待進行', color: '#f97316' },
-      { id: 'c5', title: '完成', color: '#22c55e' },
-    ],
-    tasks: [
-      {
-        id: 't1',
-        title: '專案啟動會議',
-        description: '確認專案目標、時程與參與成員。',
-        tags: ['會議', '管理'],
-        assignee: 'Alice',
-        columnId: 'c1',
-        order: 0,
-        color: 'blue',
-        comments: [],
-      },
-      {
-        id: 't2',
-        title: 'UI 設計草稿',
-        description: '完成核心流程的介面草稿。',
-        tags: ['設計', 'Figma'],
-        assignee: 'Bob',
-        columnId: 'c2',
-        order: 0,
-        color: 'purple',
-        comments: [],
-      },
-    ],
-  },
-];
-
-const TEAM_BOARD_ID = 'default';
-const getBoardDocRef = () => doc(db, 'boards', TEAM_BOARD_ID);
-
 const App: React.FC = () => {
+  const [workspace, setWorkspace] = useState<WorkspaceKind>('boards');
+  const [workspaceDirty, setWorkspaceDirty] = useState(false);
   // --- Auth & Data State ---
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [dataLoading, setDataLoading] = useState(false);
+  const [boardError, setBoardError] = useState<string | null>(null);
+  const [boardSaving, setBoardSaving] = useState(false);
+  const scope = useRef(new AccountEpoch());
+  const accountTicket = useRef<AccountTicket>({ uid: null, epoch: 0 });
+  const boardRevision = useRef<number | null>(null);
+  const savingRef = useRef(false);
+  const modalEditingRef = useRef(false);
+  const failedRef = useRef(false);
+  const bufferedBoard = useRef<BoardState | null>(null);
+
   const [loginError, setLoginError] = useState<{
     title: string;
     message: string;
@@ -141,8 +118,8 @@ const App: React.FC = () => {
   } | null>(null);
 
   // --- App State ---
-  const [projects, setProjects] = useState<Project[]>(() => normalizeProjects(INITIAL_PROJECTS));
-  const [activeProjectId, setActiveProjectId] = useState<string>(INITIAL_PROJECTS[0].id);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [activeProjectId, setActiveProjectId] = useState<string>('');
   const [isDarkMode, setIsDarkMode] = useState(false);
 
   // Modals & UI State
@@ -185,87 +162,130 @@ const App: React.FC = () => {
     }
   }, [isDarkMode]);
 
-  // --- Auth Listener ---
+  // Account changes invalidate every outstanding callback before displaying new data.
   useEffect(() => {
+    const accountScope = scope.current;
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      accountTicket.current = accountScope.switchTo(currentUser?.uid ?? null);
+      boardRevision.current = null;
+      savingRef.current = false;
+      modalEditingRef.current = false;
+      failedRef.current = false;
+      bufferedBoard.current = null;
+      setProjects([]);
+      setActiveProjectId('');
+      setIsModalOpen(false);
+      setEditingTask(null);
+      setEditingColumnId(null);
+      setEditingProjectNameId(null);
+      setActiveColumnForNewTask('');
+      setActiveDragTaskId(null);
+      setBoardError(null);
+      setBoardSaving(false);
+      setWorkspace(
+        new URLSearchParams(window.location.search).has('calendar') ? 'calendar' : 'boards',
+      );
+      setWorkspaceDirty(false);
       setUser(currentUser);
       setAuthLoading(false);
-      if (currentUser) {
-        setDataLoading(true);
-        setLoginError(null); // Clear errors on success
-      }
+      setDataLoading(Boolean(currentUser));
+      if (currentUser) setLoginError(null);
     });
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      accountScope.switchTo(null);
+    };
   }, []);
 
-  // --- Firestore Sync (Read) ---
   useEffect(() => {
-    if (!user) {
-      // If no user, we might want to keep local default data or clear it.
-      // For now, let's keep INITIAL_PROJECTS so they see something before logging in.
-      return;
+    if (!user) return;
+    const ticket = accountTicket.current;
+    const apply = (board: BoardState) => {
+      if (!scope.current.isCurrent(ticket) || failedRef.current) return;
+      if (savingRef.current || modalEditingRef.current) {
+        bufferedBoard.current = board;
+        return;
+      }
+      boardRevision.current = board.revision;
+      setProjects(normalizeProjects(board.projects));
+      setActiveProjectId((prev) =>
+        board.projects.some((p) => p.id === prev) ? prev : board.projects[0]?.id || '',
+      );
+      setDataLoading(false);
+    };
+    const fail = (error: Error) => {
+      if (!scope.current.isCurrent(ticket)) return;
+      failedRef.current = true;
+      boardRevision.current = null;
+      setBoardError(`無法讀取個人看板，已停止編輯。${error.message}`);
+      setDataLoading(false);
+    };
+    try {
+      return subscribeBoard(user.uid, apply, fail);
+    } catch (error) {
+      fail(error instanceof Error ? error : new Error('讀取失敗'));
     }
-
-    const boardDocRef = getBoardDocRef();
-    const unsubscribe = onSnapshot(
-      boardDocRef,
-      (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          if (data.projects && Array.isArray(data.projects)) {
-            const normalizedProjects = normalizeProjects(data.projects as Project[]);
-            setProjects(normalizedProjects);
-            // If the currently active project was deleted remotely, switch to the first available
-            setActiveProjectId((prev) => {
-              const stillExists = data.projects.find((p: Project) => p.id === prev);
-              return stillExists ? prev : data.projects[0]?.id || '';
-            });
-          }
-        } else {
-          // Initialize shared team board data
-          setDoc(
-            boardDocRef,
-            {
-              projects: normalizeProjects(INITIAL_PROJECTS),
-              updatedAt: new Date().toISOString(),
-              updatedBy: user.uid,
-            },
-            { merge: true },
-          );
-        }
-        setDataLoading(false);
-      },
-      (error) => {
-        console.error('Error fetching data:', error);
-        setDataLoading(false);
-      },
-    );
-
-    return () => unsubscribe();
   }, [user]);
 
-  // --- Data Persistence Helper ---
-  // We use this wrapper to update state AND write to Firestore
-  // Note: We only write if user is logged in.
   const updateProjects = async (newProjects: Project[]) => {
+    const ticket = accountTicket.current;
+    const expectedRevision = boardRevision.current;
+    if (
+      !user ||
+      auth.currentUser?.uid !== user.uid ||
+      ticket.uid !== user.uid ||
+      expectedRevision === null ||
+      savingRef.current ||
+      failedRef.current
+    )
+      return;
     const normalizedProjects = normalizeProjects(newProjects);
+    savingRef.current = true;
+    setBoardSaving(true);
     setProjects(normalizedProjects);
-    if (user) {
-      try {
-        await setDoc(
-          getBoardDocRef(),
-          {
-            projects: normalizedProjects,
-            updatedAt: new Date().toISOString(),
-            updatedBy: user.uid,
-          },
-          { merge: true },
-        );
-      } catch (e) {
-        console.error('Error saving to Firestore', e);
+    try {
+      const saved = await saveBoard(user.uid, normalizedProjects, expectedRevision);
+      if (!scope.current.isCurrent(ticket)) return;
+      const buffered = bufferedBoard.current;
+      const latest =
+        !modalEditingRef.current && buffered && buffered.revision > saved.revision
+          ? buffered
+          : saved;
+      boardRevision.current = latest.revision;
+      setProjects(normalizeProjects(latest.projects));
+      setActiveProjectId((prev) =>
+        latest.projects.some((p) => p.id === prev) ? prev : latest.projects[0]?.id || '',
+      );
+    } catch (error) {
+      if (!scope.current.isCurrent(ticket)) return;
+      failedRef.current = true;
+      boardRevision.current = null;
+      setBoardError(
+        `儲存未完成，已保留畫面上的草稿並停止後續寫入。${error instanceof Error ? error.message : '請檢查連線與權限。'}`,
+      );
+    } finally {
+      if (scope.current.isCurrent(ticket)) {
+        savingRef.current = false;
+        if (!modalEditingRef.current) bufferedBoard.current = null;
+        setBoardSaving(false);
       }
     }
   };
+
+  // A modal edits a snapshot at its original revision. Remote versions wait until
+  // cancel/close; saving that draft must still detect a transaction conflict.
+  useEffect(() => {
+    modalEditingRef.current = isModalOpen;
+    if (isModalOpen || savingRef.current || failedRef.current) return;
+    const buffered = bufferedBoard.current;
+    if (!buffered || buffered.ownerUid !== accountTicket.current.uid) return;
+    bufferedBoard.current = null;
+    boardRevision.current = buffered.revision;
+    setProjects(normalizeProjects(buffered.projects));
+    setActiveProjectId((prev) =>
+      buffered.projects.some((p) => p.id === prev) ? prev : buffered.projects[0]?.id || '',
+    );
+  }, [isModalOpen]);
 
   // --- Auth Actions ---
   const handleLogin = async () => {
@@ -322,10 +342,15 @@ const App: React.FC = () => {
   };
 
   const handleLogout = async () => {
+    if (boardSaving) return;
+    if (
+      (workspaceDirty || boardError || isModalOpen) &&
+      !window.confirm('尚未儲存的內容會離開此工作區，確定登出？')
+    )
+      return;
     try {
       await signOut(auth);
-      setProjects(normalizeProjects(INITIAL_PROJECTS)); // Reset to default on logout
-      setActiveProjectId(INITIAL_PROJECTS[0].id);
+      // Auth listener clears every account-scoped state.
     } catch (error) {
       console.error('Logout failed', error);
     }
@@ -374,20 +399,20 @@ const App: React.FC = () => {
 
   // --- Task Handlers ---
   const handleAddTaskClick = (columnId?: string) => {
+    modalEditingRef.current = true;
     setEditingTask(null);
     setActiveColumnForNewTask(columnId || columns[0]?.id);
     setIsModalOpen(true);
   };
 
   const handleEditTaskClick = (task: Task) => {
+    modalEditingRef.current = true;
     setEditingTask(task);
     setActiveColumnForNewTask(task.columnId);
     setIsModalOpen(true);
   };
 
   const saveTask = (taskData: Partial<Task>) => {
-    let updatedEditingTask: Task | null = null;
-
     const newProjects = projects.map((project) => {
       if (project.id !== activeProjectId) return project;
 
@@ -399,7 +424,6 @@ const App: React.FC = () => {
             if (t.id !== editingTask.id) return t;
 
             const updatedTask = { ...t, ...taskData } as Task;
-            updatedEditingTask = updatedTask;
             return updatedTask;
           }),
         };
@@ -418,7 +442,7 @@ const App: React.FC = () => {
           color: taskData.color || 'white',
           comments: taskData.comments || [],
         };
-        if (taskData.imageUrl) {
+        if (taskData.imagePath || taskData.imageUrl) {
           newTask.imageUrl = taskData.imageUrl;
           newTask.imagePath = taskData.imagePath;
         }
@@ -430,8 +454,11 @@ const App: React.FC = () => {
     });
     updateProjects(newProjects);
 
-    if (updatedEditingTask && editingTask?.id === updatedEditingTask.id) {
-      setEditingTask(updatedEditingTask);
+    if (editingTask) {
+      const updated = newProjects
+        .find((p) => p.id === activeProjectId)
+        ?.tasks.find((t) => t.id === editingTask.id);
+      if (updated) setEditingTask(updated);
     }
   };
 
@@ -589,7 +616,7 @@ const App: React.FC = () => {
             歡迎使用小螞蟻看板
           </h1>
           <p className="text-slate-500 dark:text-slate-400 mb-8">
-            登入以進入團隊共用看板，和夥伴即時協作。
+            登入以進入你的個人看板與工作區。
           </p>
 
           {loginError && (
@@ -682,229 +709,317 @@ const App: React.FC = () => {
     );
   }
 
-  return (
-    <div className="h-screen bg-gray-50 dark:bg-slate-950 transition-colors duration-200 flex font-sans overflow-hidden">
-      {/* Sidebar - Project List */}
-      <aside className="w-64 bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-800 flex flex-col flex-shrink-0 z-20 shadow-md">
-        <div className="h-16 flex items-center px-5 border-b border-gray-100 dark:border-slate-800">
-          <div className="flex items-center gap-2">
-            <span className="text-3xl leading-none select-none">🐜</span>
-            <h1 className="font-bold text-gray-800 dark:text-gray-100 tracking-tight text-lg">
-              小螞蟻看板
-            </h1>
-          </div>
-        </div>
-
-        <div className="p-4 flex-1 flex flex-col min-h-0">
-          <div className="flex items-center justify-between mb-2 px-1">
-            <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              團隊專案
-            </h2>
-            <button
-              onClick={addProject}
-              className="text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 p-1"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-          </div>
-
-          {dataLoading ? (
-            <div className="flex justify-center py-4">
-              <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+  const navigation = (
+    <WorkspaceTabs
+      value={workspace}
+      busy={boardSaving}
+      dirty={workspaceDirty || Boolean(boardError) || isModalOpen}
+      onChange={(next) => {
+        setWorkspaceDirty(false);
+        setIsModalOpen(false);
+        setEditingTask(null);
+        setWorkspace(next);
+      }}
+    />
+  );
+  if (workspace !== 'boards')
+    return (
+      <>
+        {navigation}
+        <Suspense
+          fallback={
+            <div role="status" className="p-8">
+              正在開啟工作區…
             </div>
-          ) : (
-            <div className="space-y-1 overflow-y-auto pr-1 custom-scrollbar flex-1">
-              {projects.map((project) => (
-                <div
-                  key={project.id}
-                  onClick={() => setActiveProjectId(project.id)}
-                  className={`group flex items-center justify-between px-3 py-2.5 rounded-lg cursor-pointer transition-all ${
-                    activeProjectId === project.id
-                      ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 font-medium'
-                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 truncate flex-1">
-                    <FolderOpen
-                      className={`w-4 h-4 flex-shrink-0 ${activeProjectId === project.id ? 'fill-blue-200 dark:fill-blue-900' : ''}`}
-                    />
-
-                    {editingProjectNameId === project.id ? (
-                      <input
-                        autoFocus
-                        value={project.name}
-                        onChange={(e) => handleProjectNameChange(project.id, e.target.value)}
-                        onBlur={commitProjectName}
-                        onKeyDown={(e) => e.key === 'Enter' && commitProjectName()}
-                        onClick={(e) => e.stopPropagation()}
-                        className="bg-transparent border-b border-blue-500 focus:outline-none w-full text-sm"
-                      />
-                    ) : (
-                      <span className="truncate text-sm">{project.name}</span>
-                    )}
-                  </div>
-
-                  <div
-                    className={`flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ${activeProjectId === project.id ? 'opacity-100' : ''}`}
-                  >
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingProjectNameId(project.id);
-                      }}
-                      className="p-1 hover:bg-black/5 dark:hover:bg-white/10 rounded"
-                    >
-                      <PenLine className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={(e) => deleteProject(project.id, e)}
-                      className="p-1 hover:bg-red-100 dark:hover:bg-red-900/40 hover:text-red-600 rounded"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+          }
+        >
+          {workspace === 'maps' && (
+            <MindmapWorkspace key={user.uid} user={user} onDirtyChange={setWorkspaceDirty} />
           )}
-        </div>
+          {workspace === 'calendar' && <CalendarWorkspace key={user.uid} user={user} />}
+          {workspace === 'agents' && <AgentAccess key={user.uid} user={user} />}
+        </Suspense>
+      </>
+    );
 
-        {/* User Profile & Dark Mode */}
-        <div className="p-4 border-t border-gray-100 dark:border-slate-800 space-y-2">
-          <div className="flex items-center gap-3 px-2 py-2 mb-2">
-            <img
-              src={
-                user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || 'User'}`
-              }
-              alt="User"
-              className="w-8 h-8 rounded-full border border-slate-200 dark:border-slate-700"
-            />
-
-            <div className="flex-1 truncate">
-              <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">
-                {user.displayName || 'Google 使用者'}
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{user.email}</p>
-            </div>
-          </div>
-
-          <Button
-            onClick={() => setIsDarkMode(!isDarkMode)}
-            variant="ghost"
-            className="w-full justify-start gap-3 h-9"
-            size="sm"
-          >
-            {isDarkMode ? (
-              <Sun className="w-4 h-4 text-yellow-500" />
-            ) : (
-              <Moon className="w-4 h-4 text-slate-600" />
-            )}
-            <span className="text-sm">{isDarkMode ? '亮色模式' : '暗色模式'}</span>
-          </Button>
-
-          <Button
-            onClick={handleLogout}
-            variant="ghost"
-            className="w-full justify-start gap-3 text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 h-9"
-            size="sm"
-          >
-            <LogOut className="w-4 h-4" />
-            <span className="text-sm">登出</span>
-          </Button>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col h-full overflow-hidden">
-        {/* Header */}
-        <header className="h-16 flex-shrink-0 border-b border-gray-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm px-6 flex items-center justify-between z-10">
-          <div className="flex items-center gap-3">
-            <Layout className="w-5 h-5 text-slate-400" />
-            <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">
-              {activeProject?.name}
-            </h2>
-            {dataLoading && (
-              <span className="text-xs text-slate-400 ml-2 animate-pulse">同步中...</span>
-            )}
-          </div>
-          <Button onClick={addColumn} variant="secondary" size="sm">
-            <Plus className="w-4 h-4 mr-2" />
-            新增狀態池
-          </Button>
-        </header>
-
-        {/* Board Area */}
-        <div className="flex-1 overflow-x-auto overflow-y-hidden">
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCorners}
-            onDragStart={handleDragStart}
-            onDragEnd={handleDragEnd}
-            onDragCancel={handleDragCancel}
-          >
-            <div className="h-full p-6 flex items-start gap-6 min-w-max">
-              {columns.map((column) => {
-                const columnTasks = sortedTasks.filter((task) => task.columnId === column.id);
-
-                return (
-                  <KanbanColumn
-                    key={column.id}
-                    column={column}
-                    tasks={columnTasks}
-                    isActiveDrag={Boolean(activeDragTaskId)}
-                    isEditing={editingColumnId === column.id}
-                    onEditTask={handleEditTaskClick}
-                    onAddTask={handleAddTaskClick}
-                    onDeleteColumn={deleteColumn}
-                    onColorChange={updateColumnColor}
-                    onTitleChange={handleColumnTitleChange}
-                    onTitleCommit={commitColumnTitle}
-                    onStartTitleEdit={setEditingColumnId}
-                  />
+  if (dataLoading || boardError) {
+    return (
+      <>
+        {navigation}
+        <div className="min-h-[calc(100vh-60px)] flex flex-col items-center justify-center gap-4 bg-gray-50 p-8">
+          <h1 className="text-xl font-bold">個人看板</h1>
+          <p role="status" className="max-w-xl whitespace-pre-wrap">
+            {boardError || '正在確認雲端看板，確認完成前不會建立或覆寫資料。'}
+          </p>
+          {boardError && (
+            <Button
+              onClick={() => {
+                const url = URL.createObjectURL(
+                  new Blob([JSON.stringify({ projects }, null, 2)], { type: 'application/json' }),
                 );
-              })}
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'antty-board-recovery.json';
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+            >
+              下載目前草稿備份
+            </Button>
+          )}
+          <Button onClick={() => window.location.reload()}>重新讀取</Button>
+          <Button variant="ghost" onClick={handleLogout}>
+            登出
+          </Button>
+        </div>
+      </>
+    );
+  }
 
-              {/* Add Column Button (End of list) */}
-              <button
-                onClick={addColumn}
-                className="w-[42rem] h-12 flex-shrink-0 flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 dark:border-slate-800 text-gray-500 dark:text-slate-500 hover:border-blue-500 hover:text-blue-500 hover:bg-blue-50/50 dark:hover:bg-blue-900/20 transition-all group"
-                type="button"
-              >
-                <Plus className="w-5 h-5 group-hover:scale-110 transition-transform" />
-                <span>新增列表</span>
-              </button>
+  return (
+    <>
+      {navigation}
+      <div className="h-[calc(100dvh-60px)] bg-gray-50 dark:bg-slate-950 transition-colors duration-200 flex font-sans overflow-hidden">
+        {boardSaving && (
+          <div
+            role="status"
+            className="fixed inset-0 z-[100] bg-white/30 flex items-center justify-center"
+          >
+            <span className="rounded-lg bg-white p-4 shadow">正在儲存…</span>
+          </div>
+        )}
+        <div className="contents" inert={boardSaving}>
+          {/* Sidebar - Project List */}
+          <aside className="w-64 bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-800 flex flex-col flex-shrink-0 z-20 shadow-md">
+            <div className="h-16 flex items-center px-5 border-b border-gray-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <span className="text-3xl leading-none select-none">🐜</span>
+                <h1 className="font-bold text-gray-800 dark:text-gray-100 tracking-tight text-lg">
+                  小螞蟻看板
+                </h1>
+              </div>
             </div>
 
-            <DragOverlay
-              dropAnimation={{ duration: 180, easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)' }}
-            >
-              {activeDragTask ? (
-                <TaskCard task={activeDragTask} onEdit={handleEditTaskClick} isDragging={false} />
-              ) : null}
-            </DragOverlay>
-          </DndContext>
-        </div>
-      </main>
+            <div className="p-4 flex-1 flex flex-col min-h-0">
+              <div className="flex items-center justify-between mb-2 px-1">
+                <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  團隊專案
+                </h2>
+                <button
+                  onClick={addProject}
+                  className="text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 p-1"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
 
-      <TaskModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSave={saveTask}
-        onDelete={deleteTask}
-        initialData={editingTask}
-        columns={columns}
-        activeColumnId={activeColumnForNewTask}
-        currentUser={
-          user
-            ? {
-                uid: user.uid,
-                displayName: user.displayName,
-                email: user.email,
-              }
-            : null
-        }
-      />
-    </div>
+              {dataLoading ? (
+                <div className="flex justify-center py-4">
+                  <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+                </div>
+              ) : (
+                <div className="space-y-1 overflow-y-auto pr-1 custom-scrollbar flex-1">
+                  {projects.map((project) => (
+                    <div
+                      key={project.id}
+                      onClick={() => setActiveProjectId(project.id)}
+                      className={`group flex items-center justify-between px-3 py-2.5 rounded-lg cursor-pointer transition-all ${
+                        activeProjectId === project.id
+                          ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 font-medium'
+                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 truncate flex-1">
+                        <FolderOpen
+                          className={`w-4 h-4 flex-shrink-0 ${activeProjectId === project.id ? 'fill-blue-200 dark:fill-blue-900' : ''}`}
+                        />
+
+                        {editingProjectNameId === project.id ? (
+                          <input
+                            autoFocus
+                            value={project.name}
+                            onChange={(e) => handleProjectNameChange(project.id, e.target.value)}
+                            onBlur={commitProjectName}
+                            onKeyDown={(e) => e.key === 'Enter' && commitProjectName()}
+                            onClick={(e) => e.stopPropagation()}
+                            className="bg-transparent border-b border-blue-500 focus:outline-none w-full text-sm"
+                          />
+                        ) : (
+                          <span className="truncate text-sm">{project.name}</span>
+                        )}
+                      </div>
+
+                      <div
+                        className={`flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ${activeProjectId === project.id ? 'opacity-100' : ''}`}
+                      >
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingProjectNameId(project.id);
+                          }}
+                          className="p-1 hover:bg-black/5 dark:hover:bg-white/10 rounded"
+                        >
+                          <PenLine className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => deleteProject(project.id, e)}
+                          className="p-1 hover:bg-red-100 dark:hover:bg-red-900/40 hover:text-red-600 rounded"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* User Profile & Dark Mode */}
+            <div className="p-4 border-t border-gray-100 dark:border-slate-800 space-y-2">
+              <div className="flex items-center gap-3 px-2 py-2 mb-2">
+                <img
+                  src={
+                    user.photoURL ||
+                    `https://ui-avatars.com/api/?name=${user.displayName || 'User'}`
+                  }
+                  alt="User"
+                  className="w-8 h-8 rounded-full border border-slate-200 dark:border-slate-700"
+                />
+
+                <div className="flex-1 truncate">
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">
+                    {user.displayName || 'Google 使用者'}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                    {user.email}
+                  </p>
+                </div>
+              </div>
+
+              <Button
+                onClick={() => setIsDarkMode(!isDarkMode)}
+                variant="ghost"
+                className="w-full justify-start gap-3 h-9"
+                size="sm"
+              >
+                {isDarkMode ? (
+                  <Sun className="w-4 h-4 text-yellow-500" />
+                ) : (
+                  <Moon className="w-4 h-4 text-slate-600" />
+                )}
+                <span className="text-sm">{isDarkMode ? '亮色模式' : '暗色模式'}</span>
+              </Button>
+
+              <Button
+                onClick={handleLogout}
+                variant="ghost"
+                className="w-full justify-start gap-3 text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 h-9"
+                size="sm"
+              >
+                <LogOut className="w-4 h-4" />
+                <span className="text-sm">登出</span>
+              </Button>
+            </div>
+          </aside>
+
+          {/* Main Content */}
+          <main className="flex-1 flex flex-col h-full overflow-hidden">
+            {/* Header */}
+            <header className="h-16 flex-shrink-0 border-b border-gray-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm px-6 flex items-center justify-between z-10">
+              <div className="flex items-center gap-3">
+                <Layout className="w-5 h-5 text-slate-400" />
+                <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">
+                  {activeProject?.name}
+                </h2>
+                {dataLoading && (
+                  <span className="text-xs text-slate-400 ml-2 animate-pulse">同步中...</span>
+                )}
+              </div>
+              <Button onClick={addColumn} variant="secondary" size="sm">
+                <Plus className="w-4 h-4 mr-2" />
+                新增狀態池
+              </Button>
+            </header>
+
+            {/* Board Area */}
+            <div className="flex-1 overflow-x-auto overflow-y-hidden">
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCorners}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+                onDragCancel={handleDragCancel}
+              >
+                <div className="h-full p-6 flex items-start gap-6 min-w-max">
+                  {columns.map((column) => {
+                    const columnTasks = sortedTasks.filter((task) => task.columnId === column.id);
+
+                    return (
+                      <KanbanColumn
+                        key={column.id}
+                        column={column}
+                        tasks={columnTasks}
+                        isActiveDrag={Boolean(activeDragTaskId)}
+                        isEditing={editingColumnId === column.id}
+                        onEditTask={handleEditTaskClick}
+                        onAddTask={handleAddTaskClick}
+                        onDeleteColumn={deleteColumn}
+                        onColorChange={updateColumnColor}
+                        onTitleChange={handleColumnTitleChange}
+                        onTitleCommit={commitColumnTitle}
+                        onStartTitleEdit={setEditingColumnId}
+                      />
+                    );
+                  })}
+
+                  {/* Add Column Button (End of list) */}
+                  <button
+                    onClick={addColumn}
+                    className="w-[42rem] h-12 flex-shrink-0 flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 dark:border-slate-800 text-gray-500 dark:text-slate-500 hover:border-blue-500 hover:text-blue-500 hover:bg-blue-50/50 dark:hover:bg-blue-900/20 transition-all group"
+                    type="button"
+                  >
+                    <Plus className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                    <span>新增列表</span>
+                  </button>
+                </div>
+
+                <DragOverlay
+                  dropAnimation={{ duration: 180, easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)' }}
+                >
+                  {activeDragTask ? (
+                    <TaskCard
+                      task={activeDragTask}
+                      onEdit={handleEditTaskClick}
+                      isDragging={false}
+                    />
+                  ) : null}
+                </DragOverlay>
+              </DndContext>
+            </div>
+          </main>
+
+          <TaskModal
+            key={user.uid}
+            isOpen={isModalOpen}
+            onClose={() => setIsModalOpen(false)}
+            onSave={saveTask}
+            onDelete={deleteTask}
+            initialData={editingTask}
+            columns={columns}
+            activeColumnId={activeColumnForNewTask}
+            currentUser={
+              user
+                ? {
+                    uid: user.uid,
+                    displayName: user.displayName,
+                    email: user.email,
+                  }
+                : null
+            }
+          />
+        </div>
+      </div>
+    </>
   );
 };
 
