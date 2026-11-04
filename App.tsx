@@ -1,3 +1,4 @@
+import { LegacyMigration } from './components/LegacyMigration';
 import React, { lazy, Suspense, useState, useEffect, useMemo, useRef } from 'react';
 import {
   DndContext,
@@ -707,6 +708,10 @@ const App: React.FC = () => {
         </div>
       </div>
     );
+  }
+
+  if (new URLSearchParams(window.location.search).get('legacyMigration') === '1') {
+    return <LegacyMigration key={user.uid} user={user} />;
   }
 
   const navigation = (
