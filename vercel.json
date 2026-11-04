@@ -3,7 +3,8 @@
   "git": {
     "deploymentEnabled": {
       "fix/runtime-and-admin-auth": false,
-      "fix/server-jose-compatibility": false
+      "fix/server-jose-compatibility": false,
+      "chore/wif-readonly-preflight": false
     }
   }
 }
