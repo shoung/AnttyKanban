@@ -1,4 +1,4 @@
-import { createOAuthSecrets, hashValue, type TokenCipher } from './security.ts';
+import { createOAuthSecrets, hashValue, type TokenCipher } from './security.js';
 
 export const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events.owned';
 export type ConnectionStatus =

@@ -1,10 +1,10 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { idSchema, titleSchema, nodeSchema } from '../mindmap/lib/model';
-import { validateProjects } from '../services/boardSafety';
-import { validateEvent, type CalendarEventInput, type CalendarListInput } from './calendar/core';
-import { safeMcpError } from './mcpHttp';
-import { type McpPrincipal, type McpScope } from './mcpPolicy';
+import { idSchema, titleSchema, nodeSchema } from '../mindmap/lib/model.js';
+import { validateProjects } from '../services/boardSafety.js';
+import { validateEvent, type CalendarEventInput, type CalendarListInput } from './calendar/core.js';
+import { safeMcpError } from './mcpHttp.js';
+import { type McpPrincipal, type McpScope } from './mcpPolicy.js';
 
 export interface McpDataService {
   listMaps(uid: string, input: { limit: number; after?: string }): Promise<unknown>;
@@ -45,7 +45,9 @@ const eventSchema = z
     end: dateSchema,
   })
   .strict();
-const treeSchema = nodeSchema.describe('Mind map tree: {id, text, children:[nodes]}. IDs must be unique alphanumeric, underscore, or hyphen strings of 1-80 characters; text is non-empty and at most 2000 characters; maximum 1000 nodes and depth 32.');
+const treeSchema = nodeSchema.describe(
+  'Mind map tree: {id, text, children:[nodes]}. IDs must be unique alphanumeric, underscore, or hyphen strings of 1-80 characters; text is non-empty and at most 2000 characters; maximum 1000 nodes and depth 32.',
+);
 const revision = z.number().int().min(1).max(Number.MAX_SAFE_INTEGER);
 const eventId = z.string().regex(/^[A-Za-z0-9_-]{1,1024}$/);
 const etag = z.string().min(1).max(256);

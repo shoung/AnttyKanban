@@ -150,3 +150,28 @@ test('Each PAT authentication rechecks Firebase account existence and revocation
   account = null;
   await assert.rejects(authenticate(token.token), /revoked/i);
 });
+
+test('PAT authentication preserves wrapped backend credential outages as 503', async () => {
+  const { createMcpAuthenticator } = await import('../server/mcpTokens.ts');
+  const { repository } = memoryRepository();
+  const token = await createTokenService(repository, () => 2000).issue('alice', {
+    name: 'Reader',
+    scopes: ['maps:read'],
+    days: 1,
+  });
+  const authenticate = createMcpAuthenticator(
+    repository,
+    async () => {
+      throw Object.assign(new Error('provider detail must not escape'), {
+        code: 'app/invalid-credential',
+        cause: { status: 503 },
+      });
+    },
+    () => 3000,
+  );
+  await assert.rejects(authenticate(token.token), (error) => {
+    assert.equal((error as { status: number }).status, 503);
+    assert.equal((error as Error).message, 'Backend credentials unavailable');
+    return true;
+  });
+});

@@ -1,12 +1,12 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { z } from 'zod';
-import { authenticateRequest } from '../server/firebase';
+import { authenticateRequest } from '../server/firebase.js';
 import {
   createTokenService,
   firestoreTokenRepository,
   type McpTokenSummary,
-} from '../server/mcpTokens';
-import { parseTokenRequest } from '../server/mcpPolicy';
+} from '../server/mcpTokens.js';
+import { parseTokenRequest } from '../server/mcpPolicy.js';
 import {
   assertMcpRequestOrigin,
   consumeMcpQuota,
@@ -16,7 +16,7 @@ import {
   readBoundedJson,
   safeMcpError,
   type McpConfig,
-} from '../server/mcpHttp';
+} from '../server/mcpHttp.js';
 
 export const config = { api: { bodyParser: false } };
 interface TokenOperations {

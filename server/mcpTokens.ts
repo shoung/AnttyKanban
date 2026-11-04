@@ -1,6 +1,7 @@
+import { isCredentialUnavailable } from './adminCredentials.js';
 import { FieldPath } from 'firebase-admin/firestore';
-import { enforceUid } from './authPolicy';
-import { getAdminAuth, getAdminDb } from './firebase';
+import { enforceUid } from './authPolicy.js';
+import { getAdminAuth, getAdminDb } from './firebase.js';
 import {
   assertActiveMcpAccount,
   authorizeToken,
@@ -8,7 +9,7 @@ import {
   parseTokenRequest,
   tokenHash,
   type McpTokenRecord,
-} from './mcpPolicy';
+} from './mcpPolicy.js';
 
 export type McpTokenSummary = McpTokenRecord & { id: string };
 export interface McpTokenRepository {
@@ -116,7 +117,8 @@ export function createMcpAuthenticator(
       const user = await getAccount(principal.uid);
       assertActiveMcpAccount(user, principal.tokenIssuedAt);
     } catch (error) {
-      if ((error as { status?: number }).status === 503) throw error;
+      if (isCredentialUnavailable(error))
+        throw Object.assign(new Error('Backend credentials unavailable'), { status: 503 });
       throw Object.assign(
         new Error('Agent token account access has been revoked or is unavailable'),
         { status: 401 },

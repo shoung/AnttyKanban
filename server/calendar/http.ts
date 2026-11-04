@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { CalendarError, type CalendarService, type CalendarStatus } from './core.ts';
+import { CalendarError, type CalendarService, type CalendarStatus } from './core.js';
 
 type Request = IncomingMessage & { body?: unknown };
 interface Dependencies {

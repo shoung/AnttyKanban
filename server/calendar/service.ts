@@ -1,5 +1,5 @@
 import { Timestamp } from 'firebase-admin/firestore';
-import { getAdminAuth, getAdminDb } from '../firebase';
+import { getAdminAuth, getAdminDb } from '../firebase.js';
 import {
   CalendarError,
   CalendarService,
@@ -8,10 +8,10 @@ import {
   type CalendarStore,
   type CalendarStatus,
   type OAuthAttempt,
-} from './core.ts';
-import { calendarConfig } from './config.ts';
-import { createCipher } from './security.ts';
-import { googleGateway } from './google.ts';
+} from './core.js';
+import { calendarConfig } from './config.js';
+import { createCipher } from './security.js';
+import { googleGateway } from './google.js';
 
 /** These collections must have NO browser-readable or browser-writable matching allow rule. */
 const CONNECTIONS = 'calendarConnections';
@@ -96,4 +96,4 @@ export type {
   CalendarEventInput,
   CalendarListInput,
   CalendarStatus,
-} from './core.ts';
+} from './core.js';

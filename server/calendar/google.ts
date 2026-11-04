@@ -1,6 +1,6 @@
 import { CodeChallengeMethod, OAuth2Client } from 'google-auth-library';
-import { CALENDAR_SCOPE, CalendarError, type GoogleGateway } from './core.ts';
-import type { CalendarConfig } from './config.ts';
+import { CALENDAR_SCOPE, CalendarError, type GoogleGateway } from './core.js';
+import type { CalendarConfig } from './config.js';
 
 export function googleGateway(config: CalendarConfig): GoogleGateway {
   const client = () =>
