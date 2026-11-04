@@ -26,10 +26,20 @@ test('emitted API handlers run in native Node and fail closed without authentica
       ],
       { cwd: root, timeout: 45_000, env: { NODE_ENV: 'test' } },
     );
+    // Vercel's instrumentation can reject require(ESM), even on newer Node.
+    await execute(
+      process.execPath,
+      ['--no-experimental-require-module', path.join(root, 'tests/fixtures/jwks-runtime.mjs')],
+      { cwd: root, timeout: 30000, env: { NODE_ENV: 'production' } },
+    );
     // A fresh process deliberately inherits neither tsx/NODE_OPTIONS nor credentials.
     await execute(
       process.execPath,
-      [path.join(root, 'tests/fixtures/native-runtime.mjs'), output],
+      [
+        '--no-experimental-require-module',
+        path.join(root, 'tests/fixtures/native-runtime.mjs'),
+        output,
+      ],
       { cwd: root, timeout: 30_000, env: { NODE_ENV: 'production' } },
     );
   } finally {

@@ -12,7 +12,8 @@
     "format": "prettier --write .",
     "test": "node --import tsx --test tests/*.test.ts",
     "test:ui": "vitest run",
-    "test:rules": "firebase emulators:exec --config security/firebase.emulators.json --project demo-antty-security --only firestore,storage \"node --import tsx --test tests/security/*.test.ts\""
+    "test:rules": "firebase emulators:exec --config security/firebase.emulators.json --project demo-antty-security --only firestore,storage \"node --import tsx --test tests/security/*.test.ts\"",
+    "postinstall": "patch-package --error-on-fail --error-on-warn"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -45,6 +46,7 @@
     "firebase-tools": "^15.34.2",
     "globals": "^17.6.0",
     "jsdom": "^30.1.3",
+    "patch-package": "^8.0.1",
     "prettier": "^3.8.3",
     "tsx": "^4.23.15",
     "typescript": "~5.8.2",
