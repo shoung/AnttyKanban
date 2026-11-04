@@ -15,6 +15,7 @@ export interface McpPrincipal {
   uid: string;
   scopes: McpScope[];
   tokenIssuedAt?: number;
+  authentication?: 'oauth';
 }
 export interface McpTokenRecord {
   ownerUid: string;

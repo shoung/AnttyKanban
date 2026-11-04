@@ -1,4 +1,19 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "git": { "deploymentEnabled": { "fix/runtime-and-admin-auth": false } }
+  "git": {
+    "deploymentEnabled": {
+      "fix/runtime-and-admin-auth": false,
+      "feat/chatgpt-mcp-oauth": false
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/.well-known/oauth-protected-resource/api/mcp",
+      "destination": "/api/mcp-oauth-metadata"
+    },
+    {
+      "source": "/.well-known/oauth-protected-resource",
+      "destination": "/api/mcp-oauth-metadata"
+    }
+  ]
 }

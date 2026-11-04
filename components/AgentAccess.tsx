@@ -217,7 +217,7 @@ function AccountAgentAccess({ user }: { user: User }) {
         </p>
         <p>
           這裡提供自訂 Bearer 權杖的 MCP 連線，適用於支援自訂 Authorization 標頭的客戶端。目前不是
-          ChatGPT 的 OAuth 連接器。
+          ChatGPT 網頁版的 OAuth 連接方式；後者需要另外完成授權服務設定與帳號連結。
         </p>
         <p>
           權杖等同所選範圍的帳號存取權，請不要貼到公開對話、原始碼或版本庫。Google
