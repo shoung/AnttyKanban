@@ -1,6 +1,12 @@
 import { createOAuthSecrets, hashValue, type TokenCipher } from './security.js';
 
 export const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events.owned';
+export type CalendarChannel = 'ui' | 'agent';
+export interface CalendarGrantContext {
+  channel: CalendarChannel;
+  clientId: string;
+  projectId: string;
+}
 export type ConnectionStatus =
   | 'connected'
   | 'disconnected'
@@ -17,6 +23,9 @@ export class CalendarError extends Error {
   }
 }
 export interface CalendarConnection {
+  ownerUid?: string;
+  channel?: CalendarChannel;
+  grantBinding?: string;
   revision: number;
   status: ConnectionStatus;
   googleSubject?: string;
@@ -25,6 +34,8 @@ export interface CalendarConnection {
   updatedAt: number;
 }
 export interface OAuthAttempt {
+  channel: CalendarChannel;
+  grantBinding: string;
   uid: string;
   bindingHash: string;
   encryptedVerifier: string;
@@ -32,6 +43,8 @@ export interface OAuthAttempt {
   expiresAt: number;
 }
 export interface CalendarStore {
+  /** Read-only legacy marker, only exposed by the interactive store. Never provides a credential. */
+  hasLegacyConnection?(uid: string): Promise<boolean>;
   getConnection(uid: string): Promise<CalendarConnection | null>;
   saveConnection(
     uid: string,
@@ -83,7 +96,7 @@ export interface CalendarListInput {
 }
 export interface CalendarStatus {
   configured: boolean;
-  status: ConnectionStatus | 'not_configured';
+  status: ConnectionStatus | 'not_configured' | 'configuration_changed';
   calendar: 'primary';
 }
 
@@ -196,7 +209,9 @@ function publicEvent(value: unknown): CalendarEvent {
 }
 
 export class CalendarService {
+  private readonly grantBinding: string;
   private deps: {
+    context: CalendarGrantContext;
     store: CalendarStore;
     google: GoogleGateway;
     cipher: TokenCipher;
@@ -204,31 +219,83 @@ export class CalendarService {
     now: () => number;
   };
   constructor(deps: {
+    context: CalendarGrantContext;
     store: CalendarStore;
     google: GoogleGateway;
     cipher: TokenCipher;
     expectedGoogleSubject: (uid: string) => Promise<string>;
     now?: () => number;
   }) {
-    this.deps = { ...deps, now: deps.now ?? Date.now };
+    if (
+      !deps.context ||
+      !['ui', 'agent'].includes(deps.context.channel) ||
+      !deps.context.clientId ||
+      !deps.context.projectId ||
+      !deps.cipher.keyId
+    ) {
+      throw new CalendarError('CALENDAR_NOT_CONFIGURED', 503);
+    }
+    this.deps = { ...deps, context: { ...deps.context }, now: deps.now ?? Date.now };
+    this.grantBinding = hashValue(
+      JSON.stringify([
+        'v2',
+        deps.context.channel,
+        deps.context.clientId,
+        deps.context.projectId,
+        deps.cipher.keyId,
+      ]),
+    );
+  }
+  private isBound(uid: string, connection: CalendarConnection): boolean {
+    return (
+      connection.ownerUid === uid &&
+      connection.channel === this.deps.context.channel &&
+      connection.grantBinding === this.grantBinding
+    );
+  }
+  private assertBound(uid: string, connection: CalendarConnection | null): void {
+    if (connection && !this.isBound(uid, connection))
+      throw new CalendarError('CALENDAR_GRANT_MISMATCH', 409);
+  }
+  private cipherContext(uid: string, purpose: 'refresh' | 'verifier'): string {
+    return JSON.stringify(['v2', this.grantBinding, uid, purpose]);
+  }
+  private attemptKey(state: string): string {
+    return hashValue(JSON.stringify([this.grantBinding, state]));
+  }
+  private bindingFields(uid: string) {
+    return { ownerUid: uid, channel: this.deps.context.channel, grantBinding: this.grantBinding };
   }
   async getStatus(uid: string): Promise<CalendarStatus> {
     const connection = await this.deps.store.getConnection(uid);
-    return { configured: true, status: connection?.status ?? 'disconnected', calendar: 'primary' };
+    const status = connection
+      ? this.isBound(uid, connection)
+        ? connection.status
+        : 'configuration_changed'
+      : this.deps.context.channel === 'ui' && (await this.deps.store.hasLegacyConnection?.(uid))
+        ? 'reconnect_required'
+        : 'disconnected';
+    return { configured: true, status, calendar: 'primary' };
   }
   async beginConnect(uid: string, browserBinding: string): Promise<{ authorizationUrl: string }> {
     if (!browserBinding || browserBinding.length > 512)
       throw new CalendarError('OAUTH_STATE_INVALID');
     await this.deps.expectedGoogleSubject(uid);
     const existing = await this.deps.store.getConnection(uid);
+    this.assertBound(uid, existing);
     if (existing?.status === 'revocation_pending')
       throw new CalendarError('REVOCATION_PENDING', 409);
     const secrets = createOAuthSecrets();
-    await this.deps.store.createAttempt(hashValue(secrets.state), {
+    await this.deps.store.createAttempt(this.attemptKey(secrets.state), {
       uid,
+      channel: this.deps.context.channel,
+      grantBinding: this.grantBinding,
       bindingHash: hashValue(browserBinding),
       expectedRevision: existing?.revision ?? 0,
-      encryptedVerifier: this.deps.cipher.seal(secrets.verifier, uid),
+      encryptedVerifier: this.deps.cipher.seal(
+        secrets.verifier,
+        this.cipherContext(uid, 'verifier'),
+      ),
       expiresAt: this.deps.now() + 600_000,
     });
     return {
@@ -248,13 +315,19 @@ export class CalendarService {
     )
       throw new CalendarError('OAUTH_STATE_INVALID');
     const attempt = await this.deps.store.consumeAttempt(
-      hashValue(state),
+      this.attemptKey(state),
       hashValue(browserBinding),
       this.deps.now(),
     );
-    if (!attempt) throw new CalendarError('OAUTH_STATE_INVALID');
+    if (
+      !attempt ||
+      attempt.channel !== this.deps.context.channel ||
+      attempt.grantBinding !== this.grantBinding
+    )
+      throw new CalendarError('OAUTH_STATE_INVALID');
     const expectedSubject = await this.deps.expectedGoogleSubject(attempt.uid);
     const existing = await this.deps.store.getConnection(attempt.uid);
+    this.assertBound(attempt.uid, existing);
     if (
       (existing?.revision ?? 0) !== attempt.expectedRevision ||
       existing?.status === 'revocation_pending'
@@ -262,13 +335,13 @@ export class CalendarService {
       throw new CalendarError('CONNECTION_CHANGED', 409);
     const tokens = await this.deps.google.exchangeCode(
       code,
-      this.deps.cipher.open(attempt.encryptedVerifier, attempt.uid),
+      this.deps.cipher.open(attempt.encryptedVerifier, this.cipherContext(attempt.uid, 'verifier')),
     );
     if (tokens.subject !== expectedSubject) throw new CalendarError('GOOGLE_ACCOUNT_MISMATCH');
     if (!tokens.grantedScopes.includes(CALENDAR_SCOPE))
       throw new CalendarError('CALENDAR_SCOPE_REQUIRED');
     const encryptedRefreshToken = tokens.refreshToken
-      ? this.deps.cipher.seal(tokens.refreshToken, attempt.uid)
+      ? this.deps.cipher.seal(tokens.refreshToken, this.cipherContext(attempt.uid, 'refresh'))
       : existing?.googleSubject === expectedSubject && existing.status === 'connected'
         ? existing.encryptedRefreshToken
         : undefined;
@@ -276,6 +349,7 @@ export class CalendarService {
     const saved = await this.deps.store.saveConnection(
       attempt.uid,
       {
+        ...this.bindingFields(attempt.uid),
         revision: attempt.expectedRevision + 1,
         status: 'connected',
         googleSubject: expectedSubject,
@@ -294,12 +368,24 @@ export class CalendarService {
     if (confirmProjectRevocation !== true)
       throw new CalendarError('REVOCATION_CONFIRMATION_REQUIRED');
     const existing = await this.deps.store.getConnection(uid);
+    this.assertBound(uid, existing);
+    if (
+      !existing &&
+      this.deps.context.channel === 'ui' &&
+      (await this.deps.store.hasLegacyConnection?.(uid))
+    )
+      throw new CalendarError('LEGACY_CALENDAR_GRANT', 409);
     const revision = existing?.revision ?? 0;
     if (!existing?.encryptedRefreshToken) {
       if (
         !(await this.deps.store.saveConnection(
           uid,
-          { revision: revision + 1, status: 'disconnected', updatedAt: this.deps.now() },
+          {
+            ...this.bindingFields(uid),
+            revision: revision + 1,
+            status: 'disconnected',
+            updatedAt: this.deps.now(),
+          },
           revision,
         ))
       )
@@ -316,7 +402,7 @@ export class CalendarService {
       throw new CalendarError('CONNECTION_CHANGED', 409);
     try {
       await this.deps.google.revokeToken(
-        this.deps.cipher.open(existing.encryptedRefreshToken, uid),
+        this.deps.cipher.open(existing.encryptedRefreshToken, this.cipherContext(uid, 'refresh')),
       );
     } catch {
       // Never resume Calendar calls after a disconnect intent, even if Google is unavailable.
@@ -325,7 +411,12 @@ export class CalendarService {
     if (
       !(await this.deps.store.saveConnection(
         uid,
-        { revision: revision + 2, status: 'disconnected', updatedAt: this.deps.now() },
+        {
+          ...this.bindingFields(uid),
+          revision: revision + 2,
+          status: 'disconnected',
+          updatedAt: this.deps.now(),
+        },
         revision + 1,
       ))
     )
@@ -334,17 +425,22 @@ export class CalendarService {
   }
   private async assertCurrentConnection(uid: string, revision: number): Promise<void> {
     const current = await this.deps.store.getConnection(uid);
-    if (current?.status !== 'connected' || current.revision !== revision)
+    if (
+      current?.status !== 'connected' ||
+      current.revision !== revision ||
+      !this.isBound(uid, current)
+    )
       throw new CalendarError('CONNECTION_CHANGED', 409);
   }
   private async accessToken(uid: string): Promise<{ token: string; revision: number }> {
     const connection = await this.deps.store.getConnection(uid);
+    this.assertBound(uid, connection);
     if (connection?.status !== 'connected' || !connection.encryptedRefreshToken)
       throw new CalendarError('CALENDAR_NOT_CONNECTED', 409);
     let token: string;
     try {
       token = await this.deps.google.refreshAccessToken(
-        this.deps.cipher.open(connection.encryptedRefreshToken, uid),
+        this.deps.cipher.open(connection.encryptedRefreshToken, this.cipherContext(uid, 'refresh')),
       );
     } catch (error) {
       if (error instanceof CalendarError && error.code === 'RECONNECT_REQUIRED') {

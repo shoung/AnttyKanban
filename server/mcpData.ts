@@ -84,7 +84,7 @@ type CalendarOperations = Pick<
 >;
 export function createMcpDataService(
   storage: WorkspaceStore = firestoreWorkspaceStore(),
-  calendarOperations: CalendarOperations = calendar,
+  calendarOperations: CalendarOperations = calendar.agentCalendarOperations,
 ): McpDataService {
   return {
     async listMaps(uid, input) {

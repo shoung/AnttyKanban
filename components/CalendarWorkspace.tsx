@@ -2,9 +2,13 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
 import { CalendarDays, Link, RefreshCw, Trash2, Pencil, Unplug } from 'lucide-react';
 import { Button } from './Button';
+import { AgentCalendarAccess } from './AgentCalendarAccess';
 import type { CalendarEvent, CalendarEventInput, CalendarStatus } from '../server/calendar/core';
 
 const errorMessages: Record<string, string> = {
+  LEGACY_CALENDAR_GRANT:
+    '這是舊版日曆授權，請重新連結；若要撤銷舊授權，請至 Google 帳號的第三方存取設定處理。',
+  CALENDAR_GRANT_MISMATCH: '日曆授權設定已變更，請管理員先核對原設定；不會覆寫或撤銷既有授權。',
   CALENDAR_NOT_CONFIGURED: '日曆服務尚未設定完成，原本的 Google 登入仍可使用。',
   AUTHENTICATION_REQUIRED: '登入狀態已失效，請重新登入後再試。',
   CALENDAR_NOT_CONNECTED: '請先連結你的 Google 日曆。',
@@ -160,7 +164,15 @@ function CalendarAccountWorkspace({ user }: { user: User }) {
     } catch (failure) {
       if (mounted.current) {
         setError(errorText(failure));
-        if (failure instanceof Error && failure.message === 'RECONNECT_REQUIRED')
+        if (failure instanceof Error && failure.message === 'CALENDAR_GRANT_MISMATCH') {
+          setStatus({ configured: true, status: 'configuration_changed', calendar: 'primary' });
+          setEvents([]);
+          setEditing(null);
+        }
+        if (
+          failure instanceof Error &&
+          ['RECONNECT_REQUIRED', 'LEGACY_CALENDAR_GRANT'].includes(failure.message)
+        )
           setStatus({ configured: true, status: 'reconnect_required', calendar: 'primary' });
       }
     } finally {
@@ -284,6 +296,7 @@ function CalendarAccountWorkspace({ user }: { user: User }) {
             )}
           </div>
         </header>
+        <AgentCalendarAccess key={user.uid} user={user} />
         {error && (
           <p
             role="alert"
@@ -303,6 +316,15 @@ function CalendarAccountWorkspace({ user }: { user: User }) {
         {!status && (
           <p className="p-8 text-center text-slate-500">
             {busy ? '正在確認日曆連線…' : '目前無法讀取日曆狀態，可稍後重新整理。'}
+          </p>
+        )}
+        {status?.status === 'configuration_changed' && (
+          <p
+            role="alert"
+            className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"
+          >
+            日曆授權設定已變更。請管理員核對原本的 OAuth
+            設定後再操作；既有授權不會被覆寫或自動撤銷。
           </p>
         )}
         {status?.status === 'not_configured' && (
