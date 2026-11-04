@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "allowJs": false,
+    "allowImportingTsExtensions": false,
+    "rewriteRelativeImportExtensions": false,
+    "noEmit": false,
+    "noEmitOnError": true,
+    "rootDir": ".",
+    "outDir": "./node_modules/.cache/antty-runtime"
+  },
+  "include": ["api/**/*.ts", "server/**/*.ts"]
+}

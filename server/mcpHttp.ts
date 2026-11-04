@@ -1,7 +1,7 @@
 import type { IncomingHttpHeaders, ServerResponse } from 'node:http';
 import { ZodError } from 'zod';
-import { getAdminDb } from './firebase';
-import { tokenHash } from './mcpPolicy';
+import { getAdminDb } from './firebase.js';
+import { tokenHash } from './mcpPolicy.js';
 
 export interface McpConfig {
   origin: string;

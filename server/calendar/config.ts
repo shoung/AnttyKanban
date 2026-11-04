@@ -1,5 +1,5 @@
-import { CalendarError } from './core.ts';
-import { createCipher } from './security.ts';
+import { CalendarError } from './core.js';
+import { createCipher } from './security.js';
 
 export interface CalendarConfig {
   clientId: string;

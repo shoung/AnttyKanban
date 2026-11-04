@@ -1,9 +1,9 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { bearerToken } from '../server/authPolicy';
-import { authenticateMcpToken } from '../server/mcpTokens';
-import { createMcpDataService } from '../server/mcpData';
-import { createMcpServer, type McpDataService } from '../server/mcpServer';
+import { bearerToken } from '../server/authPolicy.js';
+import { authenticateMcpToken } from '../server/mcpTokens.js';
+import { createMcpDataService } from '../server/mcpData.js';
+import { createMcpServer, type McpDataService } from '../server/mcpServer.js';
 import {
   assertMcpRequestOrigin,
   consumeMcpQuota,
@@ -13,8 +13,8 @@ import {
   readBoundedJson,
   safeMcpError,
   type McpConfig,
-} from '../server/mcpHttp';
-import type { McpPrincipal } from '../server/mcpPolicy';
+} from '../server/mcpHttp.js';
+import type { McpPrincipal } from '../server/mcpPolicy.js';
 
 // Disable platform eager parsing so oversized bodies never reach the SDK.
 export const config = { api: { bodyParser: false } };

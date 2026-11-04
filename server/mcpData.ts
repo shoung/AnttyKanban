@@ -1,17 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { FieldPath } from 'firebase-admin/firestore';
-import { getAdminDb } from './firebase';
-import { enforceUid } from './authPolicy';
-import { idSchema, MAX_BODY_BYTES } from '../mindmap/lib/model';
+import { getAdminDb } from './firebase.js';
+import { enforceUid } from './authPolicy.js';
+import { idSchema, MAX_BODY_BYTES } from '../mindmap/lib/model.js';
 import {
   createMapRecord,
   readMapRecord,
   updateMapRecord,
   mapRecordForStorage,
-} from '../services/mapPolicy';
-import { boardPath, decodeBoard, prepareBoardWrite } from '../services/boardSafety';
-import * as calendar from './calendar/service';
-import type { McpDataService } from './mcpServer';
+} from '../services/mapPolicy.js';
+import { boardPath, decodeBoard, prepareBoardWrite } from '../services/boardSafety.js';
+import * as calendar from './calendar/service.js';
+import type { McpDataService } from './mcpServer.js';
 
 export interface WorkspaceStore {
   read(path: string): Promise<unknown | null>;

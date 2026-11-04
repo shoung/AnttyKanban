@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { z } from 'zod';
-import { enforceUid } from './authPolicy';
+import { enforceUid } from './authPolicy.js';
 
 export const allowedScopes = [
   'maps:read',

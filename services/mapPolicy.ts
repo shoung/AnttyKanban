@@ -5,7 +5,7 @@ import {
   idSchema,
   MAX_BODY_BYTES,
   type MapDocument,
-} from '../mindmap/lib/model';
+} from '../mindmap/lib/model.js';
 export type MapRecord = MapDocument & { ownerUid: string; schemaVersion: 1 };
 export type StoredMapRecord = Omit<MapRecord, 'root'> & { rootJson: string };
 const fail = (message: string, status: number): never => {
