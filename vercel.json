@@ -3,7 +3,8 @@
   "git": {
     "deploymentEnabled": {
       "fix/runtime-and-admin-auth": false,
-      "feat/chatgpt-mcp-oauth": false
+      "feat/chatgpt-mcp-oauth": false,
+      "fix/server-jose-compatibility": false
     }
   },
   "rewrites": [

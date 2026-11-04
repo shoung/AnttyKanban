@@ -100,7 +100,7 @@ Every OAuth request reads the binding and Firebase account again. Effective scop
 3. Configure provider metadata with PKCE S256, approved callbacks/client registration, resource binding and the accepted token profile. Verify exact discovery and signing-key values; do not guess them.
 4. Implement and independently review the dual-proof linking workflow above. Verify two real test accounts cannot bind or read one another's workspaces, including same-email/colliding-label cases. This gate is not implemented in the current patch.
 5. Validate provider token expiration, refresh rotation, revocation, client restrictions and audience handling. Confirm local binding/Firebase revocation takes effect even after external refresh.
-6. Run all local checks and emulator rules tests. Confirm no preview touches production data or secrets.
+6. Run all local checks and emulator rules tests, and verify the actual Vercel Node 26 function packaging/import chain. Local Node 24 and CI Node 22 success are not substitutes for that runtime check. Confirm no preview touches production data or secrets.
 7. After separately authorized deployment, test actual ChatGPT web discovery, consent acceptance/cancellation, reconnect, scope denial, and a harmless read. Account/workspace plugin restrictions may still prevent connection.
 8. Only after those tests call the connection live. Do not enable write scopes merely because the read pilot works.
 
