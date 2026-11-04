@@ -72,6 +72,11 @@ export function createMcpServer(principal: McpPrincipal, data: McpDataService) {
       {
         description,
         inputSchema: schema,
+        ...(principal.authentication === 'oauth'
+          ? {
+              _meta: { securitySchemes: [{ type: 'oauth2', scopes: [scope] }] },
+            }
+          : {}),
         annotations: {
           readOnlyHint: readOnly,
           destructiveHint: !readOnly && !name.endsWith('_create'),
