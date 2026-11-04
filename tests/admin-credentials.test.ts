@@ -4,6 +4,7 @@ import {
   wifConfiguration,
   createWifCredential,
   adminAuthMode,
+  wifAuthClient,
 } from '../server/adminCredentials.ts';
 const env = {
   FIREBASE_PROJECT_ID: 'antboard-2025',
@@ -19,8 +20,8 @@ test('WIF config binds Google exchanges to fixed endpoints and this Firebase pro
   assert.equal(c.projectId, 'antboard-2025');
   assert.equal(c.options.token_url, 'https://sts.googleapis.com/v1/token');
   assert.equal(
-    c.oidcAudience,
-    'https://iam.googleapis.com/projects/376367007034/locations/global/workloadIdentityPools/antty-vercel/providers/production',
+    c.options.audience,
+    '//iam.googleapis.com/projects/376367007034/locations/global/workloadIdentityPools/antty-vercel/providers/production',
   );
   assert.match(
     c.options.service_account_impersonation_url!,
@@ -48,12 +49,12 @@ test('runtime credentials require explicit mode, never silently fall back to ADC
     assert.throws(() => adminAuthMode(change));
 });
 test('WIF credential supplies fresh Vercel tokens to Google library and preserves real expiry', async () => {
-  const calls: string[] = [];
+  const calls: unknown[][] = [];
   const expiry = Date.now() + 600_000;
   let supplier: () => Promise<string> = async () => '';
   const credential = createWifCredential(wifConfiguration(env), {
-    token: async (audience) => {
-      calls.push(audience);
+    token: async (...args) => {
+      calls.push(args);
       return 'synthetic-vercel-token';
     },
     client: (options) => {
@@ -70,7 +71,7 @@ test('WIF credential supplies fresh Vercel tokens to Google library and preserve
   const result = await credential.getAccessToken();
   assert.equal(result.access_token, 'synthetic-google-token');
   assert.ok(result.expires_in > 590 && result.expires_in <= 600);
-  assert.deepEqual(calls, [wifConfiguration(env).oidcAudience]);
+  assert.deepEqual(calls, [[]]);
 });
 test('credential failures never expose upstream credentials and reject missing or expired tokens', async () => {
   for (const response of [
@@ -150,4 +151,14 @@ test('Firebase Auth wrapped credential outages remain 503 rather than invalid-us
   } finally {
     await deleteApp(app);
   }
+});
+
+test('Firestore WIF preserves the default Vercel token audience without custom exchange', async () => {
+  const calls: unknown[][] = [];
+  const client = wifAuthClient(wifConfiguration(env), async (...args) => {
+    calls.push(args);
+    return 'synthetic-team-audience-token';
+  });
+  assert.equal(await client.retrieveSubjectToken(), 'synthetic-team-audience-token');
+  assert.deepEqual(calls, [[]]);
 });
