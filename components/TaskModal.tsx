@@ -1,18 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import {
-  X,
-  Plus,
-  Trash2,
-  Upload,
-  Loader2,
-  MessageCircle,
-  Pencil,
-  Send,
-} from 'lucide-react';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Plus, Trash2, Upload, Loader2, MessageCircle, Pencil, Send } from 'lucide-react';
+import { ref, uploadBytes } from 'firebase/storage';
 import { Task, Column, TaskComment } from '../types';
 import { Button } from './Button';
-import { storage } from '../firebase';
+import { auth, storage } from '../firebase';
+import { SecureTaskImage } from './SecureTaskImage';
+import { attachmentPath } from '../services/boardSafety';
 import { getTaskCardColorOption, TASK_CARD_COLOR_OPTIONS } from './taskCardColors';
 
 interface CurrentUserInfo {
@@ -57,12 +50,34 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingCommentText, setEditingCommentText] = useState('');
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const uploadEpoch = useRef(0);
+  useEffect(() => {
+    uploadEpoch.current += 1;
+    setIsUploadingImage(false);
+    return () => {
+      uploadEpoch.current += 1;
+    };
+  }, [isOpen, currentUser?.uid, initialData?.id]);
+
   const [isImagePreviewOpen, setIsImagePreviewOpen] = useState(false);
+  const formSession = useRef<string | null>(null);
 
   useEffect(() => {
+    if (!isOpen) {
+      formSession.current = null;
+      return;
+    }
+    const session = `${currentUser?.uid || ''}:${initialData?.id || 'new'}:${activeColumnId || ''}`;
+    if (formSession.current === session) return;
+    formSession.current = session;
     if (isOpen) {
       if (initialData) {
-        setFormData({ ...initialData, description: initialData.description || '', color: initialData.color || 'white', comments: initialData.comments || [] });
+        setFormData({
+          ...initialData,
+          description: initialData.description || '',
+          color: initialData.color || 'white',
+          comments: initialData.comments || [],
+        });
       } else {
         setFormData({
           title: '',
@@ -80,11 +95,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setEditingCommentText('');
       setIsImagePreviewOpen(false);
     }
-  }, [isOpen, initialData, activeColumnId, columns]);
+  }, [isOpen, initialData, activeColumnId, columns, currentUser?.uid]);
 
   if (!isOpen) return null;
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+  const handleInputChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
+  ) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
@@ -108,25 +125,23 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     e.target.value = '';
     if (!file) return;
 
-    if (!file.type.startsWith('image/')) {
-      alert('請選擇圖片檔案');
-      return;
-    }
-
+    const uid = currentUser?.uid;
+    if (!uid || auth.currentUser?.uid !== uid) return;
+    const epoch = uploadEpoch.current;
+    const isCurrentUpload = () => uploadEpoch.current === epoch && auth.currentUser?.uid === uid;
     setIsUploadingImage(true);
     try {
-      const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
-      const imagePath = `task-images/${Date.now()}-${safeFileName}`;
+      const imagePath = attachmentPath(uid, file.type, file.size, crypto.randomUUID());
       const imageRef = ref(storage, imagePath);
       await uploadBytes(imageRef, file, { contentType: file.type });
-      const imageUrl = await getDownloadURL(imageRef);
+      if (!isCurrentUpload()) return;
       setIsImagePreviewOpen(false);
-      setFormData((prev) => ({ ...prev, imageUrl, imagePath }));
-    } catch (error) {
-      console.error('Image upload failed:', error);
-      alert('圖片上傳失敗，請確認 Firebase Storage Rules 是否允許登入者上傳。');
+      setFormData((prev) => ({ ...prev, imageUrl: '', imagePath }));
+    } catch {
+      if (isCurrentUpload())
+        alert('圖片上傳失敗。請使用 10 MB 以下的 PNG、JPEG、WebP 或 GIF，並確認連線與帳號權限。');
     } finally {
-      setIsUploadingImage(false);
+      if (isCurrentUpload()) setIsUploadingImage(false);
     }
   };
 
@@ -225,7 +240,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (isUploadingImage) return;
-    onSave({ ...formData, title: formData.title?.trim(), description: formData.description?.trim() });
+    onSave({
+      ...formData,
+      title: formData.title?.trim(),
+      description: formData.description?.trim(),
+    });
     onClose();
   };
 
@@ -269,7 +288,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">內容</label>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+              內容
+            </label>
             <textarea
               name="description"
               value={formData.description}
@@ -281,7 +302,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           </div>
 
           <div>
-            <span className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">卡片顏色</span>
+            <span className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+              卡片顏色
+            </span>
             <div className="flex flex-wrap gap-2" role="group" aria-label="卡片顏色">
               {TASK_CARD_COLOR_OPTIONS.map((option) => {
                 const isSelected = getTaskCardColorOption(formData.color).id === option.id;
@@ -305,7 +328,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               任務圖片
             </label>
 
-            {formData.imageUrl && (
+            {(formData.imagePath || formData.imageUrl) && (
               <div className="relative mb-3 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
                 <button
                   type="button"
@@ -314,8 +337,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   aria-label="放大檢視任務圖片"
                   title="放大檢視任務圖片"
                 >
-                  <img
-                    src={formData.imageUrl}
+                  <SecureTaskImage
+                    imagePath={formData.imagePath}
+                    imageUrl={formData.imageUrl}
                     alt={imagePreviewAlt}
                     className="w-full max-h-56 object-cover bg-slate-100 dark:bg-slate-800"
                   />
@@ -344,7 +368,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               ) : (
                 <Upload className="w-4 h-4" />
               )}
-              {isUploadingImage ? '圖片上傳中...' : formData.imageUrl ? '更換圖片' : '選擇圖片上傳'}
+              {isUploadingImage
+                ? '圖片上傳中...'
+                : formData.imagePath || formData.imageUrl
+                  ? '更換圖片'
+                  : '選擇圖片上傳'}
               <input
                 type="file"
                 accept="image/*"
@@ -356,17 +384,17 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           </div>
 
           <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                執行者
-              </label>
-              <input
-                type="text"
-                name="assignee"
-                value={formData.assignee}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-md bg-transparent text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="誰負責?"
-              />
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+              執行者
+            </label>
+            <input
+              type="text"
+              name="assignee"
+              value={formData.assignee}
+              onChange={handleInputChange}
+              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-md bg-transparent text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="誰負責?"
+            />
           </div>
 
           <div>
@@ -573,14 +601,15 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         </form>
       </div>
 
-      {isImagePreviewOpen && formData.imageUrl && (
+      {isImagePreviewOpen && (formData.imagePath || formData.imageUrl) && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-4 cursor-zoom-out"
           onClick={() => setIsImagePreviewOpen(false)}
           role="presentation"
         >
-          <img
-            src={formData.imageUrl}
+          <SecureTaskImage
+            imagePath={formData.imagePath}
+            imageUrl={formData.imageUrl}
             alt={imagePreviewAlt}
             className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg shadow-2xl cursor-default"
             onClick={(event) => event.stopPropagation()}

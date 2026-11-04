@@ -1,0 +1,852 @@
+.mindmap-scope {
+  --ink: #323a39;
+  --muted: #89908b;
+  --green: #376a57;
+  --border: #e5e8e1;
+  --cream: #f7f8f4;
+}
+.mindmap-scope * {
+  box-sizing: border-box;
+}
+.mindmap-scope {
+  margin: 0;
+  color: var(--ink);
+  background: var(--cream);
+  font-family: 'Noto Sans TC', system-ui, sans-serif;
+  font-size: 14px;
+}
+.mindmap-scope button,
+.mindmap-scope input,
+.mindmap-scope textarea {
+  font: inherit;
+}
+.mindmap-scope button {
+  cursor: pointer;
+  color: inherit;
+  transition:
+    background 0.15s,
+    box-shadow 0.15s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.mindmap-scope button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.mindmap-scope button:focus-visible,
+.mindmap-scope input:focus-visible,
+.mindmap-scope textarea:focus-visible {
+  outline: 2px solid #5d9480;
+  outline-offset: 3px;
+}
+.mindmap-scope button:hover:not(:disabled) {
+  filter: brightness(0.98);
+}
+.mindmap-scope .workspace {
+  height: 100dvh;
+  display: flex;
+  overflow: hidden;
+}
+.mindmap-scope .sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  padding: 30px 18px 14px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  z-index: 10;
+}
+.mindmap-scope .brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 600;
+  padding: 0 9px 31px;
+}
+.mindmap-scope .brand small {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: #8a9389;
+  font-weight: 500;
+  margin-top: 1px;
+}
+.mindmap-scope .brand-mark {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: #e9f0e8;
+  color: var(--green);
+}
+.mindmap-scope .personal {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 0 9px 24px;
+  font-size: 12px;
+}
+.mindmap-scope .personal small {
+  display: block;
+  font-size: 8px;
+  letter-spacing: 1.4px;
+  color: var(--muted);
+  margin-top: 6px;
+}
+.mindmap-scope .avatar,
+.mindmap-scope .user-avatar {
+  display: grid;
+  place-items: center;
+  background: #e9ebe4;
+  border-radius: 50%;
+  height: 33px;
+  width: 33px;
+  font-size: 12px;
+  font-weight: 500;
+  border: none;
+}
+.mindmap-scope .private-dot,
+.mindmap-scope .active-dot,
+.mindmap-scope .live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #78a28b;
+  display: inline-block;
+}
+.mindmap-scope .private-dot {
+  margin-left: auto;
+}
+.mindmap-scope .new-map {
+  border: 0;
+  background: var(--green);
+  color: white;
+  padding: 12px 13px;
+  border-radius: 8px;
+  font-size: 12px;
+  justify-content: flex-start;
+  font-weight: 500;
+}
+.mindmap-scope .new-map kbd {
+  margin-left: auto;
+  font-size: 14px;
+  opacity: 0.6;
+}
+.mindmap-scope .search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 22px 6px 25px;
+  color: #9aa29b;
+}
+.mindmap-scope .search input {
+  border: 0;
+  outline: none;
+  background: transparent;
+  width: 100%;
+  font-size: 12px;
+  color: var(--ink);
+}
+.mindmap-scope .search input::placeholder {
+  color: #9ba29b;
+}
+.mindmap-scope .section-label {
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #9ba098;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 12px 12px;
+}
+.mindmap-scope .map-list {
+  flex: 1;
+  overflow: auto;
+}
+.mindmap-scope .map-item {
+  width: 100%;
+  padding: 13px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  justify-content: flex-start;
+  gap: 12px;
+  margin-bottom: 5px;
+  font-size: 12px;
+  color: #727c73;
+}
+.mindmap-scope .map-item > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mindmap-scope .map-item small {
+  display: block;
+  font-size: 10px;
+  color: #a2aaa1;
+  margin-top: 5px;
+}
+.mindmap-scope .map-item.active {
+  background: #edf3ec;
+  color: #36664d;
+}
+.mindmap-scope .map-item .active-dot {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.mindmap-scope .empty-list {
+  font-size: 12px;
+  line-height: 1.9;
+  color: #9da59a;
+  padding: 10px;
+}
+.mindmap-scope .sidebar-bottom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #929c90;
+  font-size: 10px;
+  padding: 20px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.mindmap-scope .help-btn {
+  border: 0;
+  background: none;
+  padding: 17px 8px 0;
+  justify-content: flex-start;
+  font-size: 11px;
+  color: #7c897a;
+}
+.mindmap-scope .help-btn svg:last-child {
+  margin-left: auto;
+}
+.mindmap-scope main {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.mindmap-scope header {
+  height: 76px;
+  padding: 0 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #ffffffc9;
+  border-bottom: 1px solid var(--border);
+  gap: 14px;
+  z-index: 8;
+}
+.mindmap-scope .breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.mindmap-scope .crumb {
+  font-size: 11px;
+  color: #91988f;
+  white-space: nowrap;
+}
+.mindmap-scope .breadcrumb > svg {
+  color: #abb1a8;
+  flex-shrink: 0;
+}
+.mindmap-scope .title-input {
+  border: 0;
+  background: none;
+  font-size: 12px;
+  font-weight: 500;
+  min-width: 30px;
+  width: 220px;
+  color: var(--ink);
+}
+.mindmap-scope .icon-btn {
+  background: transparent;
+  border: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  color: #798277;
+  flex-shrink: 0;
+}
+.mindmap-scope .icon-btn:hover {
+  background: #eff1eb;
+}
+.mindmap-scope .header-right {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+.mindmap-scope .save-status {
+  font-size: 10px;
+  color: #99a092;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.mindmap-scope .pending-dot {
+  height: 5px;
+  width: 5px;
+  background: #c09557;
+  border-radius: 50%;
+}
+.mindmap-scope .export-wrap {
+  position: relative;
+}
+.mindmap-scope .export-btn {
+  border: 1px solid #dfe4d9;
+  border-radius: 7px;
+  background: white;
+  padding: 8px 11px;
+  font-size: 11px;
+  color: #6d7869;
+}
+.mindmap-scope .menu {
+  position: absolute;
+  top: 42px;
+  right: 0;
+  width: 190px;
+  box-shadow: 0 8px 30px #1f352216;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: white;
+  padding: 6px;
+}
+.mindmap-scope .menu button {
+  border: 0;
+  background: none;
+  width: 100%;
+  justify-content: flex-start;
+  padding: 12px 9px;
+  font-size: 12px;
+}
+.mindmap-scope .menu button:hover {
+  background: #f3f5f0;
+}
+.mindmap-scope .user-avatar {
+  background: #efe8d9;
+  color: #81745b;
+  flex-shrink: 0;
+}
+.mindmap-scope .canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: #f8f9f6;
+}
+.mindmap-scope .canvas-label {
+  position: absolute;
+  top: 35px;
+  left: 40px;
+  z-index: 3;
+  pointer-events: none;
+}
+.mindmap-scope .canvas-tag {
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: #81927a;
+  padding: 4px 8px;
+  border: 1px solid #dce5d5;
+  border-radius: 4px;
+}
+.mindmap-scope .canvas-label h1 {
+  font-size: 23px;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+  margin: 13px 0 8px;
+}
+.mindmap-scope .canvas-label p {
+  font-size: 11px;
+  color: #98a08f;
+  margin: 0;
+}
+.mindmap-scope .mind-node {
+  width: 210px;
+  min-height: 48px;
+  padding: 13px 18px;
+  background: #fff;
+  border: 1px solid #e4e8e1;
+  border-left: 3px solid var(--branch-color);
+  border-radius: 9px;
+  box-shadow: 0 3px 8px #263c2110;
+  color: #50584c;
+  font-size: 12px;
+  line-height: 1.6;
+  position: relative;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.mindmap-scope .mind-node.node-selected {
+  box-shadow: 0 0 0 3px #6e9a6b25;
+  border-color: #6f9870;
+}
+.mindmap-scope .mind-node.root-node {
+  background: #3c6f58;
+  border-color: #3c6f58;
+  color: white;
+  min-height: 58px;
+  font-size: 15px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+}
+.mindmap-scope .mind-node textarea {
+  resize: vertical;
+  width: 100%;
+  min-height: 36px;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: inherit;
+  padding: 0;
+  line-height: 1.6;
+}
+.mindmap-scope .collapse {
+  position: absolute;
+  right: -10px;
+  top: calc(50% - 9px);
+  width: 19px;
+  height: 19px;
+  border: 1px solid #e1e6dd;
+  border-radius: 50%;
+  background: #fff;
+  color: #7d8977;
+  font-size: 9px;
+}
+.mindmap-scope .react-flow__handle {
+  opacity: 0;
+}
+.mindmap-scope .react-flow__controls {
+  box-shadow: 0 2px 8px #23351c10 !important;
+  border: 1px solid #e6e9e1 !important;
+  border-radius: 8px !important;
+  overflow: hidden;
+  bottom: 51px !important;
+  left: 26px !important;
+}
+.mindmap-scope .react-flow__controls-button {
+  border-bottom-color: #eef0e9 !important;
+  width: 29px !important;
+  height: 29px !important;
+  color: #798673 !important;
+}
+.mindmap-scope .react-flow__minimap {
+  width: 140px !important;
+  height: 90px !important;
+  bottom: 50px !important;
+  right: 23px !important;
+  border: 1px solid #e3e8de;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px #23351c0a;
+}
+.mindmap-scope .react-flow__attribution {
+  font-size: 8px !important;
+  bottom: 31px !important;
+  background: transparent !important;
+  opacity: 0.55;
+}
+.mindmap-scope .floating-toolbar {
+  position: absolute;
+  bottom: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  background: #fff;
+  border: 1px solid #e0e6da;
+  border-radius: 11px;
+  padding: 8px;
+  box-shadow: 0 7px 25px #34452b0d;
+  z-index: 4;
+}
+.mindmap-scope .add-primary {
+  background: #ecf3e9;
+  color: #4d7350;
+  border: 0;
+  border-radius: 6px;
+  padding: 9px 10px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.mindmap-scope .add-primary kbd {
+  font-size: 9px;
+  opacity: 0.55;
+  margin-left: 8px;
+  font-family: inherit;
+}
+.mindmap-scope .divider {
+  height: 22px;
+  width: 1px;
+  background: #e7ebe1;
+  margin: 0 3px;
+}
+.mindmap-scope .canvas-footer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 32px;
+  border-top: 1px solid #e8ece3;
+  background: #f8f9f6e6;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 30px;
+  font-size: 9px;
+  color: #9aa38f;
+}
+.mindmap-scope .canvas-footer .live-dot {
+  height: 5px;
+  width: 5px;
+  margin-right: 7px;
+}
+.mindmap-scope .welcome {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  text-align: center;
+  background-image: radial-gradient(#dfe5d9 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.mindmap-scope .welcome-art {
+  position: relative;
+  border-radius: 24px;
+  background: #e8f0e4;
+  color: #5b825c;
+  width: 100px;
+  height: 100px;
+  display: grid;
+  place-items: center;
+  transform: rotate(-6deg);
+  margin-bottom: 40px;
+  box-shadow: 0 9px 25px #3c572710;
+}
+.mindmap-scope .orbit {
+  position: absolute;
+  width: 21px;
+  height: 21px;
+  border-radius: 6px;
+  background: #e9decd;
+  border: 4px solid #f8f9f6;
+}
+.mindmap-scope .orbit.one {
+  right: -19px;
+  top: 10px;
+  transform: rotate(24deg);
+}
+.mindmap-scope .orbit.two {
+  left: -20px;
+  bottom: 7px;
+  background: #e0daee;
+  transform: rotate(15deg);
+}
+.mindmap-scope .eyebrow {
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: #84957b;
+}
+.mindmap-scope .welcome h1 {
+  font-size: 30px;
+  font-weight: 500;
+  letter-spacing: 1px;
+  margin: 18px 0 13px;
+}
+.mindmap-scope .welcome p {
+  font-size: 13px;
+  color: #909a87;
+  line-height: 2.1;
+  margin: 0 0 28px;
+}
+.mindmap-scope .welcome-actions {
+  display: flex;
+  gap: 12px;
+}
+.mindmap-scope .primary {
+  background: var(--green);
+  border: 0;
+  color: #fff;
+  padding: 12px 20px;
+  font-size: 12px;
+  border-radius: 7px;
+}
+.mindmap-scope .secondary {
+  background: white;
+  border: 1px solid #dde4d6;
+  color: #76836c;
+  padding: 12px 16px;
+  font-size: 12px;
+  border-radius: 7px;
+}
+.mindmap-scope .import-link {
+  border: 0;
+  background: none;
+  font-size: 11px;
+  color: #939e88;
+  margin-top: 24px;
+}
+.mindmap-scope .import-floating {
+  position: absolute;
+  top: 100px;
+  right: 29px;
+  width: 33px;
+  height: 33px;
+  border: 1px solid #e1e6db;
+  border-radius: 8px;
+  background: #fff;
+  color: #87957d;
+  z-index: 4;
+}
+.mindmap-scope .error-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff4e6;
+  color: #956232;
+  padding: 10px 24px;
+  font-size: 12px;
+  z-index: 5;
+}
+.mindmap-scope .error-banner span {
+  flex: 1;
+}
+.mindmap-scope .error-banner button {
+  border: 1px solid #e2c7a7;
+  background: white;
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-size: 11px;
+}
+.mindmap-scope .modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: #182e2540;
+  backdrop-filter: blur(5px);
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+.mindmap-scope .modal {
+  background: #fff;
+  border-radius: 18px;
+  padding: 35px;
+  width: 440px;
+  max-width: 100%;
+  position: relative;
+  box-shadow: 0 25px 100px #152b2626;
+}
+.mindmap-scope .modal-close {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+}
+.mindmap-scope .modal-icon {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: #edf3e9;
+  color: #65865b;
+}
+.mindmap-scope .modal h2 {
+  font-weight: 500;
+  font-size: 21px;
+  margin: 23px 0 9px;
+}
+.mindmap-scope .modal p {
+  color: #8e9987;
+  font-size: 12px;
+  line-height: 1.9;
+}
+.mindmap-scope .modal > input {
+  display: block;
+  width: 100%;
+  border: 1px solid #dce4d6;
+  border-radius: 7px;
+  padding: 13px;
+  margin: 24px 0 20px;
+}
+.mindmap-scope .modal > .primary {
+  width: 100%;
+}
+.mindmap-scope .help-modal {
+  width: 490px;
+}
+.mindmap-scope .help-modal h2 {
+  margin-top: 8px;
+}
+.mindmap-scope .help-modal dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  font-size: 12px;
+  gap: 15px;
+  margin: 22px 0 30px;
+}
+.mindmap-scope .help-modal dd {
+  margin: 0;
+  text-align: right;
+  color: #879b7d;
+}
+.mindmap-scope .help-modal h3 {
+  font-size: 14px;
+  font-weight: 500;
+}
+.mindmap-scope .fine-print {
+  font-size: 10px !important;
+  color: #a8b09f !important;
+}
+@media (max-width: 1100px) {
+  .mindmap-scope .sidebar {
+    width: 225px;
+  }
+  .mindmap-scope .header-right {
+    gap: 12px;
+  }
+  .mindmap-scope header {
+    padding: 0 18px;
+  }
+  .mindmap-scope .title-input {
+    width: 160px;
+  }
+  .mindmap-scope .react-flow__minimap {
+    display: none;
+  }
+  .mindmap-scope .canvas-footer > span:last-child {
+    display: none;
+  }
+  .mindmap-scope .save-status span {
+    display: none;
+  }
+}
+@media (max-width: 760px) {
+  .mindmap-scope .sidebar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 230px;
+    box-shadow: 10px 0 30px #30412117;
+    padding-top: 80px;
+  }
+  .mindmap-scope .brand {
+    padding-bottom: 24px;
+  }
+  .mindmap-scope header {
+    height: 62px;
+    position: relative;
+    z-index: 15;
+    background: white;
+    padding: 0 12px;
+  }
+  .mindmap-scope .crumb,
+  .mindmap-scope .breadcrumb > svg {
+    display: none;
+  }
+  .mindmap-scope .breadcrumb {
+    gap: 7px;
+  }
+  .mindmap-scope .title-input {
+    width: 125px;
+    font-size: 11px;
+  }
+  .mindmap-scope .header-right {
+    gap: 8px;
+  }
+  .mindmap-scope .user-avatar {
+    display: none;
+  }
+  .mindmap-scope .export-btn {
+    padding: 7px;
+  }
+  .mindmap-scope .export-btn span {
+    display: none;
+  }
+  .mindmap-scope .canvas-label {
+    top: 25px;
+    left: 22px;
+  }
+  .mindmap-scope .canvas-label h1 {
+    font-size: 18px;
+  }
+  .mindmap-scope .canvas-label p {
+    font-size: 10px;
+  }
+  .mindmap-scope .floating-toolbar {
+    bottom: 50px;
+    gap: 2px;
+    padding: 5px;
+  }
+  .mindmap-scope .floating-toolbar .icon-btn {
+    width: 27px;
+  }
+  .mindmap-scope .add-primary kbd {
+    display: none;
+  }
+  .mindmap-scope .add-primary {
+    padding: 9px 7px;
+    font-size: 10px;
+  }
+  .mindmap-scope .react-flow__controls {
+    bottom: 107px !important;
+    left: 13px !important;
+  }
+  .mindmap-scope .welcome {
+    padding: 20px;
+  }
+  .mindmap-scope .welcome h1 {
+    font-size: 22px;
+  }
+  .mindmap-scope .welcome p {
+    font-size: 12px;
+  }
+  .mindmap-scope .welcome-actions {
+    flex-direction: column;
+  }
+  .mindmap-scope .canvas-footer {
+    padding: 0 16px;
+  }
+  .mindmap-scope .import-floating {
+    top: 85px;
+    right: 16px;
+  }
+  .mindmap-scope .error-banner {
+    font-size: 11px;
+    padding: 8px 12px;
+  }
+  .mindmap-scope .modal {
+    padding: 28px;
+  }
+  .mindmap-scope .welcome-art {
+    margin-bottom: 30px;
+  }
+  .mindmap-scope .welcome .eyebrow {
+    font-size: 8px;
+  }
+}
+
+.mindmap-scope .mind-node > span {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mindmap-scope .workspace {
+  height: calc(100dvh - 60px);
+}

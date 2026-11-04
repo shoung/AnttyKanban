@@ -1,3 +1,4 @@
+import { SecureTaskImage } from './SecureTaskImage';
 import React from 'react';
 import { GripVertical, Hash, MessageCircle, User } from 'lucide-react';
 import { Task } from '../types';
@@ -58,9 +59,10 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         </div>
       </div>
 
-      {task.imageUrl && (
-        <img
-          src={task.imageUrl}
+      {(task.imagePath || task.imageUrl) && (
+        <SecureTaskImage
+          imagePath={task.imagePath}
+          imageUrl={task.imageUrl}
           alt={imageAlt}
           className="w-full h-32 object-cover rounded-md border border-slate-200/70 dark:border-slate-700/70 bg-slate-100 dark:bg-slate-900 mb-3"
           loading="lazy"

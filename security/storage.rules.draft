@@ -1,0 +1,15 @@
+// REVIEW ONLY. Preserve/back up existing rules and attachment records before any rollout.
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /users/{uid}/task-images/{imageId} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create: if resource == null && request.auth != null && request.auth.uid == uid
+        && request.resource.size > 0 && request.resource.size <= 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/(png|jpeg|webp|gif)');
+      // Immutable uploads; removing an attachment from a task does not delete its object.
+      allow update, delete: if false;
+    }
+    match /{path=**} { allow read, write: if false; }
+  }
+}
