@@ -20,9 +20,10 @@ export function adminAuthMode(
     return 'application-default';
   return notConfigured();
 }
+// Keep Vercel's default Team audience in the subject JWT. The Google STS
+// request audience below identifies the provider; it is not the JWT audience.
 export interface WifConfiguration {
   projectId: string;
-  oidcAudience: string;
   options: Omit<IdentityPoolClientOptions, 'subject_token_supplier'>;
 }
 export function wifConfiguration(env: Environment = process.env): WifConfiguration {
@@ -45,7 +46,6 @@ export function wifConfiguration(env: Environment = process.env): WifConfigurati
   const resource = `iam.googleapis.com/projects/${number}/locations/global/workloadIdentityPools/${pool}/providers/${provider}`;
   return {
     projectId,
-    oidcAudience: `https://${resource}`,
     options: {
       audience: `//${resource}`,
       subject_token_type: 'urn:ietf:params:oauth:token-type:jwt',
@@ -60,20 +60,20 @@ interface GoogleTokenClient {
   getAccessToken(): Promise<{ token?: string | null }>;
 }
 interface WifDependencies {
-  token(audience: string): Promise<string>;
+  token(): Promise<string>;
   client(options: IdentityPoolClientOptions): GoogleTokenClient;
 }
 /** Adapts short-lived Vercel OIDC → Google STS/SA impersonation to Firebase's Credential interface. */
 export function createWifCredential(
   config: WifConfiguration,
   deps: WifDependencies = {
-    token: (audience) => getVercelOidcToken({ audience }),
+    token: () => getVercelOidcToken(),
     client: (options) => new IdentityPoolClient(options),
   },
 ): Credential {
   const client = deps.client({
     ...config.options,
-    subject_token_supplier: { getSubjectToken: () => deps.token(config.oidcAudience) },
+    subject_token_supplier: { getSubjectToken: () => deps.token() },
   });
   return {
     async getAccessToken() {
@@ -90,11 +90,14 @@ export function createWifCredential(
     },
   };
 }
-export function wifAuthClient(config: WifConfiguration): IdentityPoolClient {
+export function wifAuthClient(
+  config: WifConfiguration,
+  token: () => Promise<string> = () => getVercelOidcToken(),
+): IdentityPoolClient {
   return new IdentityPoolClient({
     ...config.options,
     subject_token_supplier: {
-      getSubjectToken: () => getVercelOidcToken({ audience: config.oidcAudience }),
+      getSubjectToken: () => token(),
     },
   });
 }

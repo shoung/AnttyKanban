@@ -7,17 +7,83 @@ const allowedCodes = new Set([
   'app/invalid-credential',
   'auth/insufficient-permission',
   'auth/internal-error',
+  'invalid_grant',
+  'invalid_target',
+  'invalid_request',
+  'unauthorized_client',
+  'access_denied',
+  'PERMISSION_DENIED',
+  'UNAUTHENTICATED',
+  'INVALID_ARGUMENT',
+  'NOT_FOUND',
+  'RESOURCE_EXHAUSTED',
+  'UNAVAILABLE',
+  'INTERNAL',
+  'DEADLINE_EXCEEDED',
   7,
   16,
   5,
   14,
   4,
 ]);
+const allowedHttpStatuses = new Set([400, 401, 403, 404, 408, 409, 429, 500, 502, 503, 504]);
+
+/** Separates credential boundaries without logging claims, credentials, or response bodies. */
+export async function diagnoseCredentials({
+  env,
+  report,
+  setStage,
+  load = async () => {
+    const [{ wifConfiguration }, { getVercelOidcToken }, { IdentityPoolClient }] =
+      await Promise.all([
+        import('../server/adminCredentials.ts'),
+        import('@vercel/oidc'),
+        import('google-auth-library'),
+      ]);
+    return { wifConfiguration, getVercelOidcToken, IdentityPoolClient };
+  },
+}) {
+  setStage('wif_configuration');
+  const { wifConfiguration, getVercelOidcToken, IdentityPoolClient } = await load();
+  const config = wifConfiguration(env);
+  setStage('oidc_acquire');
+  const subjectToken = await getVercelOidcToken();
+  if (typeof subjectToken !== 'string' || !subjectToken) throw new Error('Missing token');
+  report('WIF_OIDC_ACQUIRE_OK');
+
+  // The provider enforces the default Vercel audience. Do not exchange or decode it.
+  const { service_account_impersonation_url: impersonationUrl, ...stsOptions } = config.options;
+  setStage('sts');
+  const sourceClient = new IdentityPoolClient({
+    ...stsOptions,
+    subject_token_supplier: { getSubjectToken: async () => subjectToken },
+  });
+  const { token } = await sourceClient.getAccessToken();
+  if (typeof token !== 'string' || !token) throw new Error('Missing token');
+  report('WIF_STS_OK');
+
+  // Supported authenticated request uses the cached STS token and the same fixed
+  // IAM endpoint, scopes, and lifetime as the production adapter. No project lookup.
+  setStage('impersonation');
+  const response = await sourceClient.request({
+    url: impersonationUrl,
+    method: 'POST',
+    data: { scope: config.options.scopes, lifetime: '3600s' },
+  });
+  if (
+    typeof response.data?.accessToken !== 'string' ||
+    !response.data.accessToken ||
+    !(Date.parse(response.data.expireTime) > Date.now())
+  )
+    throw new Error('Invalid token response');
+  report('WIF_IMPERSONATION_OK');
+}
 
 /** No writes, token output, document content, or real user identifiers. */
 export async function runPreflight({
   env = process.env,
   load = () => import('../server/firebase.ts'),
+  diagnose = diagnoseCredentials,
   report = (...values) => {
     writeSync(1, values.join(' ') + '\n');
   },
@@ -33,6 +99,14 @@ export async function runPreflight({
       env.FIRESTORE_EMULATOR_HOST
     )
       throw new Error('invalid configuration');
+    await diagnose({
+      env,
+      report,
+      setStage: (value) => {
+        stage = value;
+      },
+    });
+    stage = 'auth_initialize';
     const { getAdminAuth, getAdminDb } = await load();
     stage = 'auth';
     try {
@@ -57,10 +131,16 @@ export async function runPreflight({
     report('WIF_PREFLIGHT_OK');
     return true;
   } catch (error) {
+    const candidates = [
+      error?.code,
+      error?.response?.data?.error,
+      error?.response?.data?.error?.status,
+    ];
     report(
       'WIF_PREFLIGHT_FAILED',
       stage,
-      allowedCodes.has(error?.code) ? error.code : 'unavailable',
+      candidates.find((code) => allowedCodes.has(code)) ?? 'unavailable',
+      allowedHttpStatuses.has(error?.response?.status) ? error.response.status : 'unknown_http',
     );
     return false;
   } finally {
