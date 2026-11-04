@@ -183,7 +183,11 @@ const App: React.FC = () => {
       setBoardError(null);
       setBoardSaving(false);
       setWorkspace(
-        new URLSearchParams(window.location.search).has('calendar') ? 'calendar' : 'boards',
+        ['calendar', 'calendarAgent'].some((key) =>
+          new URLSearchParams(window.location.search).has(key),
+        )
+          ? 'calendar'
+          : 'boards',
       );
       setWorkspaceDirty(false);
       setUser(currentUser);

@@ -157,3 +157,20 @@ test('edit and delete preserve the selected event ID and ETag', async () => {
   });
   expect(screen.queryByText('Updated title')).toBeNull();
 });
+
+test('changed manual Calendar configuration blocks reconnect without altering agent controls', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) =>
+      reply({
+        configured: true,
+        status: url.includes('calendar-agent') ? 'not_configured' : 'configuration_changed',
+        calendar: 'primary',
+      }),
+    ),
+  );
+  render(<CalendarWorkspace user={user} />);
+  expect(await screen.findByText(/日曆授權設定已變更。請管理員/)).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '連結 Google 日曆' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '斷開連結' })).toBeNull();
+});

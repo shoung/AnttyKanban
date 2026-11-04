@@ -11,7 +11,7 @@ import {
   type GoogleGateway,
 } from '../server/calendar/core.ts';
 
-function fixture() {
+function fixture(channel: 'ui' | 'agent' = 'ui') {
   let now = Date.parse('2026-11-04T12:00:00Z');
   const connections = new Map<string, CalendarConnection>();
   const states = new Map<string, OAuthAttempt>();
@@ -35,6 +35,8 @@ function fixture() {
       return value;
     },
   };
+  const refreshed: string[] = [];
+  let exchanges = 0;
   const calls: Array<{ path: string; method: string; token: string; body?: unknown }> = [];
   let sub = 'google-user-a';
   let refreshToken: string | undefined = 'refresh-for-a';
@@ -53,10 +55,12 @@ function fixture() {
       return url.toString();
     },
     async exchangeCode(_code, verifier) {
+      exchanges++;
       assert.match(verifier, /^[A-Za-z0-9_-]{43,128}$/);
       return { subject: sub, refreshToken, grantedScopes: scopes };
     },
     async refreshAccessToken(token) {
+      refreshed.push(token);
       if (refreshFails) throw new CalendarError('RECONNECT_REQUIRED', 401);
       if (whileRefreshing) await whileRefreshing();
       return `access:${token}`;
@@ -85,13 +89,15 @@ function fixture() {
       return { id: 'event1', ...(body as object) };
     },
   };
-  const service = new CalendarService({
+  const deps = {
+    context: { channel, clientId: `${channel}-client-id`, projectId: `${channel}-project` },
     store,
     google,
     cipher: createCipher(Buffer.alloc(32, 8).toString('base64')),
     expectedGoogleSubject: async (uid) => (uid === 'user-a' ? 'google-user-a' : 'google-user-b'),
     now: () => now,
-  });
+  };
+  const service = new CalendarService(deps);
   async function connect(uid = 'user-a') {
     const result = await service.beginConnect(uid, 'browser-binding');
     const state = new URL(result.authorizationUrl).searchParams.get('state')!;
@@ -99,6 +105,12 @@ function fixture() {
   }
   return {
     service,
+    store,
+    cipher: deps.cipher,
+    withContext: (context: typeof deps.context) => new CalendarService({ ...deps, context }),
+    withCipher: (cipher: typeof deps.cipher) => new CalendarService({ ...deps, cipher }),
+    refreshed,
+    exchanges: () => exchanges,
     connections,
     states,
     calls,
@@ -400,3 +412,136 @@ for (const operation of ['update', 'delete'] as const) {
     assert.ok(f.calls.every((call) => call.method === 'GET'));
   });
 }
+
+test('grant records bind the workflow and client/project without exposing credentials', async () => {
+  const f = fixture();
+  await f.connect();
+  const record = f.connections.get('user-a')!;
+  assert.equal(record.channel, 'ui');
+  assert.ok(record.grantBinding);
+  const agent = f.withContext({
+    channel: 'agent',
+    clientId: 'agent-client-id',
+    projectId: 'agent-project',
+  });
+  assert.equal((await agent.getStatus('user-a')).status, 'configuration_changed');
+  await expectCode(agent.listEvents('user-a'), 'CALENDAR_GRANT_MISMATCH');
+  await expectCode(agent.beginConnect('user-a', 'binding'), 'CALENDAR_GRANT_MISMATCH');
+  await expectCode(agent.disconnect('user-a', true), 'CALENDAR_GRANT_MISMATCH');
+  assert.equal(f.calls.length, 0);
+  assert.equal(f.wasRevoked(), false);
+});
+
+test('changing configured client or project fails closed and preserves the original grant', async () => {
+  const f = fixture();
+  await f.connect();
+  const original = structuredClone(f.connections.get('user-a'));
+  for (const context of [
+    { channel: 'ui' as const, clientId: 'replacement-client', projectId: 'ui-project' },
+    { channel: 'ui' as const, clientId: 'ui-client-id', projectId: 'replacement-project' },
+  ]) {
+    const changed = f.withContext(context);
+    await expectCode(changed.createEvent('user-a', input), 'CALENDAR_GRANT_MISMATCH');
+    await expectCode(changed.beginConnect('user-a', 'binding'), 'CALENDAR_GRANT_MISMATCH');
+    await expectCode(changed.disconnect('user-a', true), 'CALENDAR_GRANT_MISMATCH');
+    assert.deepEqual(f.connections.get('user-a'), original);
+  }
+});
+
+test('OAuth attempt cannot cross workflow or changed client before code exchange', async () => {
+  const f = fixture();
+  const begin = await f.service.beginConnect('user-a', 'binding');
+  const state = new URL(begin.authorizationUrl).searchParams.get('state')!;
+  for (const context of [
+    { channel: 'agent' as const, clientId: 'agent-client', projectId: 'agent-project' },
+    { channel: 'ui' as const, clientId: 'new-ui-client', projectId: 'ui-project' },
+  ]) {
+    await expectCode(
+      f.withContext(context).completeConnect(state, 'binding', 'code'),
+      'OAUTH_STATE_INVALID',
+    );
+  }
+  assert.equal(f.exchanges(), 0);
+  await f.service.completeConnect(state, 'binding', 'code');
+  assert.equal(f.exchanges(), 1);
+  assert.equal((await f.service.getStatus('user-a')).status, 'connected');
+});
+
+test('independent workflow disconnect and pending callbacks do not revoke or replace the other grant', async () => {
+  const ui = fixture();
+  const agent = fixture('agent');
+  await ui.connect();
+  await agent.connect();
+  const attempt = await ui.service.beginConnect('user-a', 'binding');
+  agent.failRevoke();
+  await agent.service.disconnect('user-a', true);
+  await ui.service.completeConnect(
+    new URL(attempt.authorizationUrl).searchParams.get('state')!,
+    'binding',
+    'code',
+  );
+  await ui.service.createEvent('user-a', input);
+  await expectCode(agent.service.listEvents('user-a'), 'CALENDAR_NOT_CONNECTED');
+  assert.equal(ui.wasRevoked(), false);
+  assert.equal((await ui.service.getStatus('user-a')).status, 'connected');
+  assert.equal((await agent.service.getStatus('user-a')).status, 'revocation_pending');
+});
+
+test('refresh credentials cannot be decrypted as OAuth verifiers or copied across channel/client contexts', async () => {
+  const f = fixture();
+  await f.connect();
+  const grant = f.connections.get('user-a')!;
+  assert.throws(() => f.cipher.open(grant.encryptedRefreshToken!, 'user-a'));
+  const attempt = await f.service.beginConnect('user-a', 'binding');
+  const state = new URL(attempt.authorizationUrl).searchParams.get('state')!;
+  const saved = [...f.states.values()][0];
+  saved.encryptedVerifier = grant.encryptedRefreshToken!;
+  await assert.rejects(f.service.completeConnect(state, 'binding', 'code'));
+});
+
+test('encryption-key changes fail closed before exposing old tokens to Google', async () => {
+  const f = fixture();
+  await f.connect();
+  const changed = f.withCipher(createCipher(Buffer.alloc(32, 9).toString('base64')));
+  assert.equal((await changed.getStatus('user-a')).status, 'configuration_changed');
+  await expectCode(changed.listEvents('user-a'), 'CALENDAR_GRANT_MISMATCH');
+  await expectCode(changed.beginConnect('user-a', 'browser'), 'CALENDAR_GRANT_MISMATCH');
+  assert.equal(f.refreshed.length, 0);
+});
+
+test('even edited grant metadata cannot transfer ciphertext into another workflow or user', async () => {
+  const ui = fixture();
+  const agent = fixture('agent');
+  await ui.connect();
+  await agent.connect();
+  const humanToken = ui.connections.get('user-a')!.encryptedRefreshToken!;
+  agent.connections.get('user-a')!.encryptedRefreshToken = humanToken;
+  await assert.rejects(agent.service.listEvents('user-a'));
+  assert.equal(agent.refreshed.length, 0);
+  const copied = { ...ui.connections.get('user-a')!, ownerUid: 'user-b' };
+  ui.connections.set('user-b', copied);
+  await assert.rejects(ui.service.listEvents('user-b'));
+  assert.equal(ui.refreshed.length, 0);
+});
+
+test('agent reconsent never falls back to a UI refresh credential omitted by Google', async () => {
+  const ui = fixture();
+  const agent = fixture('agent');
+  await ui.connect();
+  agent.omitRefresh();
+  await expectCode(agent.connect(), 'OFFLINE_ACCESS_REQUIRED');
+  assert.equal((await ui.service.getStatus('user-a')).status, 'connected');
+  assert.equal((await agent.service.getStatus('user-a')).status, 'disconnected');
+  assert.equal(agent.refreshed.length, 0);
+});
+
+test('a changed encryption key cannot consume an existing OAuth attempt or exchange its code', async () => {
+  const f = fixture();
+  const start = await f.service.beginConnect('user-a', 'browser');
+  const state = new URL(start.authorizationUrl).searchParams.get('state')!;
+  const changed = f.withCipher(createCipher(Buffer.alloc(32, 12).toString('base64')));
+  await expectCode(changed.completeConnect(state, 'browser', 'code'), 'OAUTH_STATE_INVALID');
+  assert.equal(f.exchanges(), 0);
+  await f.service.completeConnect(state, 'browser', 'code');
+  assert.equal(f.exchanges(), 1);
+});

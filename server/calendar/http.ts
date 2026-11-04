@@ -44,14 +44,16 @@ function keys(body: Record<string, unknown>, allowed: string[]) {
   if (Object.keys(body).some((key) => !allowed.includes(key)))
     throw new CalendarError('INVALID_REQUEST');
 }
-function cookieName(origin: string): string {
-  return origin.startsWith('https:') ? '__Host-antty_calendar_oauth' : 'antty_calendar_oauth';
+type Workflow = 'ui' | 'agent';
+function cookieName(origin: string, workflow: Workflow): string {
+  const suffix = workflow === 'agent' ? 'antty_calendar_agent_oauth' : 'antty_calendar_oauth';
+  return origin.startsWith('https:') ? `__Host-${suffix}` : suffix;
 }
-function cookie(origin: string, value: string, maxAge: number): string {
-  return `${cookieName(origin)}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${origin.startsWith('https:') ? '; Secure' : ''}`;
+function cookie(origin: string, value: string, maxAge: number, workflow: Workflow): string {
+  return `${cookieName(origin, workflow)}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${origin.startsWith('https:') ? '; Secure' : ''}`;
 }
-function bindingCookie(req: Request, origin: string): string {
-  const prefix = `${cookieName(origin)}=`;
+function bindingCookie(req: Request, origin: string, workflow: Workflow): string {
+  const prefix = `${cookieName(origin, workflow)}=`;
   return (
     (req.headers.cookie ?? '')
       .split(';')
@@ -73,7 +75,11 @@ function publicError(error: unknown): { status: number; code: string } {
   return { status: 500, code: 'CALENDAR_REQUEST_FAILED' };
 }
 
-export function createCalendarHandler(deps: Dependencies) {
+export function createCalendarHandler(
+  deps: Dependencies,
+  { workflow = 'ui' }: { workflow?: Workflow } = {},
+) {
+  const callbackMarker = workflow === 'agent' ? 'calendarAgent' : 'calendar';
   return async function handler(req: Request, res: ServerResponse): Promise<void> {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Referrer-Policy', 'no-referrer');
@@ -97,16 +103,22 @@ export function createCalendarHandler(deps: Dependencies) {
           .service()
           .completeConnect(
             url.searchParams.get('state') ?? '',
-            bindingCookie(req, callbackOrigin),
+            bindingCookie(req, callbackOrigin, workflow),
             url.searchParams.get('code') ?? '',
           );
-        res.setHeader('Set-Cookie', cookie(callbackOrigin, '', 0));
+        res.setHeader('Set-Cookie', cookie(callbackOrigin, '', 0, workflow));
         res.statusCode = 303;
-        res.setHeader('Location', `${callbackOrigin}/?calendar=connected`);
+        res.setHeader('Location', `${callbackOrigin}/?${callbackMarker}=connected`);
         res.end();
         return;
       }
-      if (!['status', 'connect', 'disconnect', 'events'].includes(action))
+      if (
+        !(
+          workflow === 'agent'
+            ? ['status', 'connect', 'disconnect']
+            : ['status', 'connect', 'disconnect', 'events']
+        ).includes(action)
+      )
         throw new CalendarError('INVALID_REQUEST');
       const allowedQuery =
         action === 'events' && req.method === 'GET'
@@ -148,7 +160,7 @@ export function createCalendarHandler(deps: Dependencies) {
         keys(body, []);
         const binding = randomBytes(32).toString('base64url');
         const result = await service.beginConnect(uid, binding);
-        res.setHeader('Set-Cookie', cookie(deps.origin(), binding, 600));
+        res.setHeader('Set-Cookie', cookie(deps.origin(), binding, 600, workflow));
         send(res, 200, result);
         return;
       }
@@ -173,9 +185,12 @@ export function createCalendarHandler(deps: Dependencies) {
     } catch (error) {
       const safe = publicError(error);
       if (callbackOrigin) {
-        res.setHeader('Set-Cookie', cookie(callbackOrigin, '', 0));
+        res.setHeader('Set-Cookie', cookie(callbackOrigin, '', 0, workflow));
         res.statusCode = 303;
-        res.setHeader('Location', `${callbackOrigin}/?calendar=${encodeURIComponent(safe.code)}`);
+        res.setHeader(
+          'Location',
+          `${callbackOrigin}/?${callbackMarker}=${encodeURIComponent(safe.code)}`,
+        );
         res.end();
         return;
       }

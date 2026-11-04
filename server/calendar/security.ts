@@ -11,6 +11,8 @@ export function createOAuthSecrets() {
 }
 
 export interface TokenCipher {
+  /** Non-secret fingerprint used only inside grant binding to detect unsupported key changes. */
+  readonly keyId: string;
   seal(value: string, owner: string): string;
   open(value: string, owner: string): string;
 }
@@ -22,6 +24,7 @@ export function createCipher(base64Key: string): TokenCipher {
   }
   const aad = (owner: string) => Buffer.from(`antty-calendar:v1:${owner}`);
   return {
+    keyId: hashValue(base64Key),
     seal(value, owner) {
       const iv = randomBytes(12);
       const cipher = createCipheriv('aes-256-gcm', key, iv);

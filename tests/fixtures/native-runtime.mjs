@@ -10,7 +10,7 @@ import { pathToFileURL, URL } from 'node:url';
 // Do not install a TypeScript loader or replace authentication/storage dependencies.
 const output = process.argv[2];
 const handlers = new Map();
-for (const name of ['calendar', 'agent-tokens', 'mcp']) {
+for (const name of ['calendar', 'calendar-agent', 'agent-tokens', 'mcp']) {
   const module = await import(pathToFileURL(path.join(output, 'api', `${name}.js`)).href);
   handlers.set(`/api/${name}`, module.default);
 }
@@ -41,6 +41,9 @@ async function expectResponse(route, status, headers = {}) {
 
 try {
   await expectResponse('/api/calendar', 401);
+  await expectResponse('/api/calendar-agent', 401);
+  await expectResponse('/api/calendar-agent?action=callback', 503);
+  await expectResponse('/api/calendar-agent?action=events', 400);
   await expectResponse('/api/calendar', 503, { Authorization: 'Bearer unavailable' });
   await expectResponse('/api/calendar?action=callback', 503);
   await expectResponse('/api/agent-tokens', 503);
