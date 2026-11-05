@@ -19,7 +19,7 @@ Node.js 22+。`npm ci` 後複製 `.env.example` 為 `.env.local`，填入自己�
 
 **日曆**：另外明確同意連接 Google Calendar，與 Firebase 登入不同。操作本人 Google 主日曆；UI 和 MCP 都使用同一後端服務。個人一般事件可增刪改查；含與會者、週期、他人主辦或特殊類型的事件目前唯讀，避免誤寄通知或改整個系列。詳見 `docs/calendar-oauth.md`。未設定不影響 Firebase 登入及其他工作區。
 
-**AI 接入**：`/api/mcp` Streamable HTTP，個人權杖限範圍、有效期限且可撤銷，後端只儲存雜湊。前往「AI 接入」自行核對範圍並建立，僅在支援自訂 Bearer token 的 MCP 客戶端使用。這不是完整 OAuth 授權伺服器，不保證能直接新增成只支援 OAuth 的 ChatGPT connector。標準遠端 OAuth discovery／consent 需要另外選擇、配置授權服務，不能把 Google Calendar token 當成 MCP token。
+**AI 接入**：`/api/mcp` Streamable HTTP，個人權杖限範圍、有效期限且可撤銷，後端只儲存雜湊。前往「AI 接入」自行核對範圍並建立，僅在支援自訂 Bearer token 的 MCP 客戶端使用。這不是完整 OAuth 授權伺服器，不保證能直接新增成只支援 OAuth 的 ChatGPT connector。本分支另備有預設關閉的 managed OAuth resource-server 驗證與 discovery；提供者配置及可驗證的 Firebase 帳號連結流程尚未啟用，也未實作 binding 寫入端點，不能宣稱已可直接連上 ChatGPT。詳見 `docs/mcp-oauth.md`。不能把 Google Calendar token 當成 MCP token。
 
 ## 上線前必做
 

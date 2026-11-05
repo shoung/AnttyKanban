@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { FieldPath } from 'firebase-admin/firestore';
+import { FieldPath, type Firestore } from 'firebase-admin/firestore';
 import { getAdminDb } from './firebase.js';
 import { enforceUid } from './authPolicy.js';
 import { idSchema, MAX_BODY_BYTES } from '../mindmap/lib/model.js';
@@ -12,6 +12,7 @@ import {
 import { boardPath, decodeBoard, prepareBoardWrite } from '../services/boardSafety.js';
 import * as calendar from './calendar/service.js';
 import type { McpDataService } from './mcpServer.js';
+import { applyBoardMutation } from './mcpBoard.js';
 
 export interface WorkspaceStore {
   read(path: string): Promise<unknown | null>;
@@ -49,8 +50,7 @@ function checkedMap(uid: string, id: string, raw: unknown) {
   if (map.id !== id) fail('Mind map identifier does not match its document', 409);
   return map;
 }
-export function firestoreWorkspaceStore(): WorkspaceStore {
-  const db = getAdminDb();
+export function firestoreWorkspaceStore(db: Firestore = getAdminDb()): WorkspaceStore {
   return {
     async read(path) {
       const row = await db.doc(path).get();
@@ -152,6 +152,16 @@ export function createMcpDataService(
         bounded(next);
         return { next, result: next };
       });
+    },
+    async mutateBoard(uid, input) {
+      enforceUid(uid);
+      bounded(input);
+      const createdId = randomUUID();
+      return storage.mutate(boardPath(uid), (previous) => {
+        const output = applyBoardMutation(uid, previous, input, createdId);
+        bounded(output.next);
+        return output;
+      }) as Promise<import('./mcpBoard.js').BoardMutationResult>;
     },
     ...calendarOperations,
   };

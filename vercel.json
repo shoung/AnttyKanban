@@ -7,7 +7,19 @@
       "chore/wif-readonly-preflight": false,
       "feat/calendar-agent-grants": false,
       "feat/google-calendar-view": false,
-      "feat/calendar-interactive-ui": false
+      "feat/calendar-interactive-ui": false,
+      "feat/chatgpt-mcp-oauth": false,
+      "feat/mcp-client-crud": false
     }
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/.well-known/oauth-protected-resource/api/mcp",
+      "destination": "/api/mcp-oauth-metadata"
+    },
+    {
+      "source": "/.well-known/oauth-protected-resource",
+      "destination": "/api/mcp-oauth-metadata"
+    }
+  ]
 }

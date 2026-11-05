@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createMcpDataService, type WorkspaceStore } from '../server/mcpData.ts';
 import type { McpDataService } from '../server/mcpServer.ts';
+import type { BoardState } from '../services/boardSafety.ts';
 
 function setup() {
   const records = new Map<string, unknown>();
@@ -39,6 +40,229 @@ function setup() {
   >;
   return { records, paths, data: createMcpDataService(storage, calendar) };
 }
+
+test('granular board CRUD keeps unrelated data, requires revisions, and never silently deletes tasks', async () => {
+  const { data } = setup();
+  const first = await data.mutateBoard('alice', {
+    operation: 'project_create',
+    expectedRevision: 0,
+    name: 'First',
+  });
+  const second = await data.mutateBoard('alice', {
+    operation: 'project_create',
+    expectedRevision: 1,
+    name: 'Unrelated',
+  });
+  const column = await data.mutateBoard('alice', {
+    operation: 'column_create',
+    projectId: first.id,
+    expectedRevision: 2,
+    title: 'Todo',
+    color: '#123456',
+  });
+  const task = await data.mutateBoard('alice', {
+    operation: 'task_create',
+    projectId: first.id,
+    columnId: column.id,
+    expectedRevision: 3,
+    title: 'Work',
+    tags: ['test'],
+    assignee: '',
+  });
+  await assert.rejects(
+    data.mutateBoard('alice', {
+      operation: 'column_delete',
+      projectId: first.id,
+      columnId: column.id,
+      expectedRevision: 4,
+    }),
+    /empty/i,
+  );
+  await assert.rejects(
+    data.mutateBoard('alice', {
+      operation: 'task_update',
+      projectId: first.id,
+      taskId: task.id,
+      expectedRevision: 3,
+      patch: { title: 'stale' },
+    }),
+    /revision/i,
+  );
+  await data.mutateBoard('alice', {
+    operation: 'task_update',
+    projectId: first.id,
+    taskId: task.id,
+    expectedRevision: 4,
+    patch: { title: 'Updated' },
+  });
+  const board = (await data.getBoard('alice')) as BoardState;
+  assert.equal(board.projects[0].tasks[0].title, 'Updated');
+  assert.deepEqual(board.projects[0].tasks[0].tags, ['test']);
+  assert.equal(board.projects[1].id, second.id);
+  assert.equal(
+    'projects' in task,
+    false,
+    'write-only responses must not disclose unrelated records',
+  );
+  await data.mutateBoard('alice', {
+    operation: 'task_delete',
+    projectId: first.id,
+    taskId: task.id,
+    expectedRevision: 5,
+  });
+  await data.mutateBoard('alice', {
+    operation: 'column_delete',
+    projectId: first.id,
+    columnId: column.id,
+    expectedRevision: 6,
+  });
+  await data.mutateBoard('alice', {
+    operation: 'project_delete',
+    projectId: first.id,
+    expectedRevision: 7,
+  });
+  assert.deepEqual(
+    ((await data.getBoard('alice')) as BoardState).projects.map((p) => p.id),
+    [second.id],
+  );
+  await assert.rejects(
+    data.mutateBoard('bob', {
+      operation: 'project_update',
+      projectId: second.id,
+      expectedRevision: 0,
+      name: 'intrusion',
+    }),
+    /not found/i,
+  );
+  assert.equal(((await data.getBoard('alice')) as BoardState).revision, 8);
+});
+
+test('granular board operations reject owner injection and invalid nested references without writing', async () => {
+  const { data, records } = setup();
+  await assert.rejects(
+    data.mutateBoard('alice', {
+      operation: 'project_create',
+      expectedRevision: 0,
+      name: 'x',
+      uid: 'bob',
+    } as never),
+  );
+  const project = await data.mutateBoard('alice', {
+    operation: 'project_create',
+    expectedRevision: 0,
+    name: 'Only',
+  });
+  await assert.rejects(
+    data.mutateBoard('alice', {
+      operation: 'task_create',
+      expectedRevision: 1,
+      projectId: project.id,
+      columnId: 'missing',
+      title: 'invalid',
+    } as never),
+    /not found/i,
+  );
+  await assert.rejects(
+    data.mutateBoard('alice', {
+      operation: 'task_update',
+      expectedRevision: 1,
+      projectId: project.id,
+      taskId: 'missing',
+      patch: { comments: [] },
+    } as never),
+  );
+  assert.equal((records.get('users/alice/boards/default') as BoardState).revision, 1);
+});
+
+test('task edits preserve existing comments and attachment references', async () => {
+  const { data, records } = setup();
+  const task = {
+    id: 'task',
+    title: 'Old',
+    columnId: 'todo',
+    order: 0,
+    tags: ['keep'],
+    assignee: 'A',
+    comments: [
+      {
+        id: 'comment',
+        text: 'Keep',
+        authorId: 'alice',
+        authorName: 'A',
+        createdAt: '2026-11-05T00:00:00Z',
+      },
+    ],
+    imagePath: 'users/alice/task-images/image',
+    imageUrl: 'https://example.test/image',
+  };
+  records.set('users/alice/boards/default', {
+    schemaVersion: 1,
+    ownerUid: 'alice',
+    revision: 1,
+    projects: [
+      {
+        id: 'project',
+        name: 'P',
+        columns: [{ id: 'todo', title: 'Todo', color: '#123456' }],
+        tasks: [task],
+      },
+    ],
+  });
+  await data.mutateBoard('alice', {
+    operation: 'task_update',
+    projectId: 'project',
+    taskId: 'task',
+    expectedRevision: 1,
+    patch: { title: 'New' },
+  });
+  assert.deepEqual(((await data.getBoard('alice')) as BoardState).projects[0].tasks[0], {
+    ...task,
+    title: 'New',
+  });
+});
+
+test('saturated task ordering returns a recoverable conflict without writing', async () => {
+  const { data, records } = setup();
+  const board = {
+    schemaVersion: 1,
+    ownerUid: 'alice',
+    revision: 1,
+    projects: [
+      {
+        id: 'project',
+        name: 'P',
+        columns: [{ id: 'todo', title: 'Todo', color: '#123456' }],
+        tasks: [
+          {
+            id: 'task',
+            title: 'Old',
+            columnId: 'todo',
+            order: Number.MAX_SAFE_INTEGER,
+            tags: [],
+            assignee: '',
+            comments: [],
+          },
+        ],
+      },
+    ],
+  };
+  records.set('users/alice/boards/default', structuredClone(board));
+  await assert.rejects(
+    data.mutateBoard('alice', {
+      operation: 'task_create',
+      projectId: 'project',
+      columnId: 'todo',
+      title: 'New',
+      expectedRevision: 1,
+    }),
+    (error) => {
+      assert.equal((error as { status: number }).status, 409);
+      assert.match((error as Error).message, /reorder/i);
+      return true;
+    },
+  );
+  assert.deepEqual(records.get('users/alice/boards/default'), board);
+});
 
 test('MCP map data stays inside authenticated account paths and uses revision preconditions', async () => {
   const { data, records, paths } = setup();
