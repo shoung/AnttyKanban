@@ -12,10 +12,14 @@ const messages: Record<string, string> = {
   LEGACY_CALENDAR_GRANT: '舊版授權需要重新連接；若要撤銷舊授權，請到 Google 帳號設定處理。',
   AUTHENTICATION_REQUIRED: '請重新登入 Antty 後再試。',
 };
-export function ManualCalendarConnection({ user }: { user: User }) {
-  return <Connection key={user.uid} user={user} />;
+interface Props {
+  user: User;
+  onStatusChange?: (status: CalendarStatus | null, checking?: boolean) => void;
 }
-function Connection({ user }: { user: User }) {
+export function ManualCalendarConnection({ user, onStatusChange }: Props) {
+  return <Connection key={user.uid} user={user} onStatusChange={onStatusChange} />;
+}
+function Connection({ user, onStatusChange }: Props) {
   const [status, setStatus] = useState<CalendarStatus | null>(null);
   const [busy, setBusy] = useState(true);
   const [notice, setNotice] = useState('');
@@ -23,6 +27,9 @@ function Connection({ user }: { user: User }) {
   const requests = useRef(new Set<AbortController>());
   const generation = useRef(0);
   const locked = useRef(true);
+  useEffect(() => {
+    onStatusChange?.(status, busy);
+  }, [busy, status, onStatusChange]);
   const request = useCallback(
     async <T,>(action: string, body?: unknown): Promise<T> => {
       const controller = new AbortController();
@@ -67,7 +74,7 @@ function Connection({ user }: { user: User }) {
     const callback = url.searchParams.get('calendar');
     if (callback) {
       if (callback === 'connected')
-        setNotice('人工日曆 API 已連接。嵌入視圖仍使用 Google 瀏覽器登入。');
+        setNotice('人工日曆 API 已連接，可在 Antty 檢視與操作支援的個人活動。');
       else setError(messages[callback] ?? '日曆 API 授權未完成，請重試。');
       url.searchParams.delete('calendar');
       window.history.replaceState(
@@ -78,7 +85,10 @@ function Connection({ user }: { user: User }) {
     }
     load()
       .catch(() => {
-        if (generation.current === current) setError('目前無法讀取人工 API 連線狀態。');
+        if (generation.current === current) {
+          setStatus(null);
+          setError('目前無法讀取人工 API 連線狀態。');
+        }
       })
       .finally(() => {
         if (generation.current === current) {
@@ -106,6 +116,7 @@ function Connection({ user }: { user: User }) {
         !(failure instanceof Error && failure.name === 'AbortError')
       ) {
         const code = failure instanceof Error ? failure.message : '';
+        setStatus(null);
         setError(messages[code] ?? '人工 API 連線操作未完成，請稍後重試。');
         if (code === 'CALENDAR_GRANT_MISMATCH')
           setStatus({ configured: true, status: 'configuration_changed', calendar: 'primary' });
@@ -135,7 +146,7 @@ function Connection({ user }: { user: User }) {
     if (
       locked.current ||
       !window.confirm(
-        '撤銷人工 API 授權可能一併撤銷同一 Google Cloud 專案內其他 Google 授權。日曆活動不會被刪除，嵌入視圖的 Google 登入也不是這筆 API 授權。確定繼續？',
+        '撤銷人工 API 授權可能一併撤銷同一 Google Cloud 專案內其他 Google 授權。日曆活動不會被刪除，Antty 將停止存取個人日曆。確定繼續？',
       )
     )
       return;
@@ -158,8 +169,8 @@ function Connection({ user }: { user: User }) {
     >
       <h2 className="font-semibold dark:text-white">人工日曆 API 連線</h2>
       <p className="mt-2 text-sm text-slate-500">
-        這是 Antty 後端的連線，與 Google 嵌入視圖和 AI 授權分開。使用 Google 原生日曆不需要先連接此
-        API。
+        這是 Antty 日曆介面使用的個人授權，與 AI
+        日曆授權分開。連接後可讀寫主要日曆中支援的個人活動。
       </p>
       {error && (
         <p role="alert" className="mt-3 text-sm text-red-700">

@@ -13,14 +13,14 @@ afterEach(() => {
   window.history.replaceState({}, '', '/');
 });
 
-test('manual connection status never reads or mutates events and explains separate embed login', async () => {
+test('manual connection status never reads or mutates events and explains separate AI consent', async () => {
   const fetcher = vi.fn(async () =>
     reply({ configured: true, status: 'connected', calendar: 'primary' }),
   );
   vi.stubGlobal('fetch', fetcher);
   render(<ManualCalendarConnection user={user} />);
   expect(await screen.findByText('人工 API 已連接。')).toBeTruthy();
-  expect(screen.getByText(/使用 Google 原生日曆不需要先連接此 API/)).toBeTruthy();
+  expect(screen.getByText(/與 AI 日曆授權分開/)).toBeTruthy();
   expect(fetcher.mock.calls).toHaveLength(1);
   expect(fetcher).toHaveBeenCalledWith('/api/calendar?action=status', expect.any(Object));
 });
@@ -44,7 +44,7 @@ test('manual callback consumes only its own marker and preserves other workflow 
     vi.fn(async () => reply({ configured: true, status: 'connected', calendar: 'primary' })),
   );
   render(<ManualCalendarConnection user={user} />);
-  expect(await screen.findByText(/人工日曆 API 已連接。嵌入視圖仍使用/)).toBeTruthy();
+  expect(await screen.findByText(/人工日曆 API 已連接，可在 Antty 檢視與操作/)).toBeTruthy();
   expect(window.location.search).toBe('?calendarAgent=OAUTH_CANCELLED');
 });
 

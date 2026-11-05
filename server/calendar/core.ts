@@ -181,6 +181,7 @@ function eventId(value: string): string {
 function isPersonalEvent(event: Record<string, unknown>): boolean {
   const organizer = event.organizer as { self?: boolean } | undefined;
   return (
+    !event.locked &&
     !event.attendeesOmitted &&
     (!Array.isArray(event.attendees) || event.attendees.length === 0) &&
     organizer?.self !== false &&
