@@ -183,11 +183,13 @@ const App: React.FC = () => {
       setBoardError(null);
       setBoardSaving(false);
       setWorkspace(
-        ['calendar', 'calendarAgent'].some((key) =>
-          new URLSearchParams(window.location.search).has(key),
-        )
-          ? 'calendar'
-          : 'boards',
+        new URLSearchParams(window.location.search).has('mcpLink')
+          ? 'agents'
+          : ['calendar', 'calendarAgent'].some((key) =>
+                new URLSearchParams(window.location.search).has(key),
+              )
+            ? 'calendar'
+            : 'boards',
       );
       setWorkspaceDirty(false);
       setUser(currentUser);

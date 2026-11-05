@@ -46,3 +46,19 @@ export async function authenticateRequest(req: {
     throw Object.assign(new Error('Authentication required'), { status: 401 });
   }
 }
+
+/** Preserve the original Firebase authentication time; refreshing an ID token is not reauthentication. */
+export async function authenticateFirebaseIdentity(req: {
+  headers: { authorization?: string | string[] };
+}): Promise<{ uid: string; authTime: number }> {
+  const token = bearerToken(req.headers.authorization);
+  try {
+    const decoded = await getAdminAuth().verifyIdToken(token, true);
+    if (!Number.isSafeInteger(decoded.auth_time)) throw new Error('Missing authentication time');
+    return { uid: enforceUid(decoded.uid), authTime: decoded.auth_time * 1000 };
+  } catch (error) {
+    if (isCredentialUnavailable(error))
+      throw Object.assign(new Error('Backend credentials unavailable'), { status: 503 });
+    throw Object.assign(new Error('Authentication required'), { status: 401 });
+  }
+}

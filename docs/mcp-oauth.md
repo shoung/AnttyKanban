@@ -2,9 +2,9 @@
 
 ## Status: implementation foundation, not an activated connection
 
-Antty now has a managed-OAuth **resource-server** path alongside the existing personal-access-token (PAT) path. It remains disabled by default. This change does not create an authorization server, an OAuth client, a provider account, a Firebase identity binding, a secret, or a live ChatGPT connection. No production deployment is part of this change.
+Antty now has a managed-OAuth **resource-server** path alongside the existing personal-access-token (PAT) path, plus a disabled personal Auth0/Firebase identity-linking implementation. This change does not create an authorization server, an OAuth client, a provider account, a production identity binding, a secret, or a live ChatGPT connection. No production deployment is part of this change.
 
-Before enabling OAuth, select and configure a compatible managed provider and complete a separately reviewed identity-linking workflow. **Without a verified binding, every OAuth request is denied.** A Firebase login alone does not authorize a new MCP client. Google Calendar OAuth is downstream authorization and cannot substitute for MCP OAuth.
+Auth0 Free is the selected personal-pilot architecture; provider setup and live acceptance still require approval. See [the concrete provider comparison, implementation and activation bundle](mcp-personal-oauth-decision.md). **Without a verified binding, every OAuth request is denied.** A Firebase login alone does not authorize a new MCP client. Google Calendar OAuth is downstream authorization and cannot substitute for MCP OAuth.
 
 ## What works in which client
 
@@ -14,7 +14,7 @@ Before enabling OAuth, select and configure a compatible managed provider and co
 
 Sources: [OpenAI authentication](https://developers.openai.com/plugins/build/auth), [custom MCP connection](https://developers.openai.com/api/docs/guides/custom-mcp-server), [local MCP configuration](https://learn.chatgpt.com/docs/extend/mcp).
 
-## Provider shortlist, checked 2026-11-04
+## Provider research, checked 2026-11-05
 
 ### Auth0: best fit for the strict JWT contract in this patch
 
@@ -70,17 +70,17 @@ The `mcpOAuthBindings` collection is server-only. The ID is SHA-256 of JSON seri
 - `validAfter`: reject OAuth access tokens issued before this millisecond cutoff;
 - `expiresAt`: finite millisecond expiry of this authorization binding.
 
-This patch deliberately provides **no binding write API, automatic user creation, migration, or linking button**. Do not manually guess a record from matching emails or a copied token. Do not use a provider's user-editable metadata as proof of a Firebase UID.
+The disabled `/api/mcp-link` and Agent access panel now implement the personal Auth0 linking flow. They do not create provider/Firebase users or migrate identities. Do not manually guess a record from matching emails or a copied token. Do not use a provider's user-editable metadata as proof of a Firebase UID.
 
-An acceptable next implementation must prove both identities in a single, short-lived, nonce-bound transaction:
+The implementation proves both identities in a short-lived, nonce-bound transaction:
 
 1. Reauthenticate the existing Firebase user and verify the Firebase ID token with revocation checks on the backend. Take UID and `auth_time` only from verified claims.
 2. Authenticate the intended provider identity through an exact callback, state/nonce and PKCE flow. Verify the issuer and expected token audience/signature, and bind this proof to the same server-side transaction/browser session.
-3. Show the two account labels, client identity, scope ceiling and expiry for explicit user consent. Labels are display only; identifiers come from verified stable subjects.
-4. Transactionally create a previously absent binding; reject collisions/reassignment. Store an audit record separately without any token or secret. Set the token cutoff and require a fresh access token if needed.
-5. Support authenticated disconnect, immediate local binding disablement, and provider grant/refresh revocation where permitted. Relinking after Firebase-wide revocation requires a fresh identity proof; refreshing an external token cannot bypass it.
+3. The Antty confirmation identifies the current Firebase account, the configured ChatGPT client purpose, only `maps:read` and seven-day expiry. Auth0 Universal Login authenticates the provider identity chosen next. Labels are display only; identifiers come from verified stable subjects. The resulting provider subject and expiry appear in the panel.
+4. Transactionally create the binding or explicitly relink for the same owner; reject collisions/reassignment even for expired/revoked subjects. The token cutoff has second precision to match JWT `iat`. Same-owner relink replaces access with the fixed narrow pilot scope, never automatically broadens it. No token is stored in the binding.
+5. Support authenticated disconnect and immediate local binding disablement. Provider/ChatGPT connection removal remains a separate user action; Antty has no provider management/revocation grant. Relinking after Firebase-wide revocation requires a fresh identity proof; refreshing an external token cannot bypass it.
 
-A reviewed managed external-authentication bridge that derives a stable identity from the verified Firebase UID is another option. Its exact APIs and security guarantees must be checked before selecting it. Firebase/Google login remains unchanged until a specific linking design is approved.
+A managed external-authentication bridge remains an alternative. The selected implementation preserves Firebase/Google login and uses an additional Auth0 identity proof. Configuration is limited to standard Auth0 tenant domains, RS256, one MCP client and a distinct public linking client. There is no generic user-supplied issuer flow. New grants, production enablement and provider setup remain unperformed.
 
 Every OAuth request reads the binding and Firebase account again. Effective scopes are the intersection of the verified access token and current binding, within the server's configured maximum. A revoked/disabled/expired/mismatched binding or deleted/disabled Firebase account fails closed. The original `firebaseAuthTime` is checked against Firebase's `tokensValidAfterTime`, so newly refreshed external tokens do not revive a revoked Firebase login.
 
@@ -95,11 +95,11 @@ Every OAuth request reads the binding and Firebase account again. Effective scop
 
 ## Release checklist
 
-1. Review the draft code and merge the native-runtime/WIF fix first. No auto-deployment is enabled for this feature branch.
-2. Obtain authorization for the chosen provider/account setup, OAuth clients, secrets and any persistent permissions. Use a separate non-production tenant and Firebase test project.
+1. Review this draft code against current main, which already includes the native-runtime/WIF fix. No auto-deployment is enabled for this feature branch.
+2. Obtain authorization for provider/account setup, OAuth clients and any persistent permissions using the concrete activation bundle. Use a dedicated tenant and approved isolated Firebase test identity/data or test project. Do not enable billing automatically for attempt cleanup.
 3. Configure provider metadata with PKCE S256, approved callbacks/client registration, resource binding and the accepted token profile. Verify exact discovery and signing-key values; do not guess them.
-4. Implement and independently review the dual-proof linking workflow above. Verify two real test accounts cannot bind or read one another's workspaces, including same-email/colliding-label cases. This gate is not implemented in the current patch.
-5. Validate provider token expiration, refresh rotation, revocation, client restrictions and audience handling. Confirm local binding/Firebase revocation takes effect even after external refresh.
+4. The dual-proof linking implementation has independent review and synthetic/emulator coverage. Still verify two real approved test identities cannot bind or read one another's workspaces, including colliding display labels. Pending callbacks must remain denied after local revocation.
+5. Validate actual provider token expiration, client restrictions, issuer and audience handling. Do not request offline access for the pilot. Any future refresh grant requires separate approval and rotation/revocation acceptance; local Firebase revocation must remain effective after refresh.
 6. Run all local checks and emulator rules tests. Confirm no preview touches production data or secrets.
 7. After separately authorized deployment, test actual ChatGPT web discovery, consent acceptance/cancellation, reconnect, scope denial, and a harmless read. Account/workspace plugin restrictions may still prevent connection.
 8. Only after those tests call the connection live. Do not enable write scopes merely because the read pilot works.

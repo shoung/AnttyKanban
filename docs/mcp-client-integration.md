@@ -8,11 +8,11 @@ substitute for installing/connecting a plugin in the actual hosted conversation.
 
 Read-only, unauthenticated probes of `https://anttykanban.vercel.app` returned:
 
-| Endpoint | Observed result |
-| --- | --- |
-| `/api/mcp` | 503, `Agent access is not configured` |
-| `/.well-known/oauth-protected-resource/api/mcp` | 404 |
-| `/.well-known/oauth-protected-resource` | 404 |
+| Endpoint                                        | Observed result                       |
+| ----------------------------------------------- | ------------------------------------- |
+| `/api/mcp`                                      | 503, `Agent access is not configured` |
+| `/.well-known/oauth-protected-resource/api/mcp` | 404                                   |
+| `/.well-known/oauth-protected-resource`         | 404                                   |
 
 No Antty tool is currently exposed in the hosted task's tool catalog. A separate
 read-only, non-decrypted Vercel environment-name inventory confirmed Production
@@ -30,14 +30,14 @@ binding, consent or deployment was created.
 
 ## Operation coverage
 
-| Scope | Tools | Concurrency and limitations |
-| --- | --- | --- |
-| `maps:read` | `mindmaps_list`, `mindmaps_get` | Paginated summaries; bounded structured trees |
-| `maps:write` | `mindmaps_create`, `mindmaps_update`, `mindmaps_delete` | Server ID on create; update/delete require last-read `expectedRevision` |
-| `boards:read` | `boards_get` | Own personal workspace and global board revision |
-| `boards:write` | `boards_project_create/update/delete`, `boards_column_create/update/delete`, `boards_task_create/update/delete`; existing `boards_replace` | Transactional global `expectedRevision`; unrelated projects/tasks preserved; nonempty column deletion refused; project deletion explicitly includes its nested data |
-| `calendar:read` | `calendar_status`, `calendar_list` | Primary calendar only, separately AI-authorized Google grant; stable range/page tokens |
-| `calendar:write` | `calendar_create`, `calendar_update`, `calendar_delete` | ETags on edits/deletes; no attendees, recurring/special/foreign-organizer/locked events |
+| Scope            | Tools                                                                                                                                      | Concurrency and limitations                                                                                                                                         |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `maps:read`      | `mindmaps_list`, `mindmaps_get`                                                                                                            | Paginated summaries; bounded structured trees                                                                                                                       |
+| `maps:write`     | `mindmaps_create`, `mindmaps_update`, `mindmaps_delete`                                                                                    | Server ID on create; update/delete require last-read `expectedRevision`                                                                                             |
+| `boards:read`    | `boards_get`                                                                                                                               | Own personal workspace and global board revision                                                                                                                    |
+| `boards:write`   | `boards_project_create/update/delete`, `boards_column_create/update/delete`, `boards_task_create/update/delete`; existing `boards_replace` | Transactional global `expectedRevision`; unrelated projects/tasks preserved; nonempty column deletion refused; project deletion explicitly includes its nested data |
+| `calendar:read`  | `calendar_status`, `calendar_list`                                                                                                         | Primary calendar only, separately AI-authorized Google grant; stable range/page tokens                                                                              |
+| `calendar:write` | `calendar_create`, `calendar_update`, `calendar_delete`                                                                                    | ETags on edits/deletes; no attendees, recurring/special/foreign-organizer/locked events                                                                             |
 
 Granular board creates use server-generated IDs. Task patches cannot replace
 comments, authors, IDs, or attachment references. Write-only granular responses
@@ -72,19 +72,20 @@ Official guidance checked for this work:
 
 ## Required, separately confirmed activation steps
 
-1. **Provider choice and test identity.** Identify an already approved compatible
-   OAuth provider/tenant or approve a dedicated test setup. #4's shortlist is only
-   research. No provider account or pricing plan has been selected here.
+1. **Provider and test identity, after confirmation.** Auth0 Free is the selected
+   personal implementation. The [provider decision and activation bundle](mcp-personal-oauth-decision.md)
+   compares alternatives and lists the exact proposed resources. No tenant or client
+   has been created, and no plan has been purchased.
 2. **Client registration, after confirmation.** Use the exact ChatGPT client
    identity/redirect URI displayed by the actual plugin management flow. Verify
    S256 PKCE, issuer identification, `resource`/audience handling and the accepted
    RFC 9068 token profile. Do not guess callbacks, automatically trust every DCR
    client or create a client/secret without confirmation.
-3. **Identity linking is still a code/review gate.** There is no binding write API
-   or approved provider-specific dual-proof linking flow yet. Prove both the
-   existing Firebase identity (revocation checked, original `auth_time`) and exact
-   external issuer/subject in a nonce-bound flow, show client/scopes/expiry for
-   explicit consent, and transactionally reject reassignment/collision. Never
+3. **Identity linking still needs live acceptance.** `/api/mcp-link` and the Agent
+   panel now provide a disabled Auth0 public-PKCE linking flow with recent Firebase
+   reauthentication, state/nonce/browser proof, one-time attempts and transactional
+   collision rejection. It fixes new bindings to `maps:read` for seven days. Tests
+   use synthetic identities/keys; no real provider binding has been created. Never
    create binding documents by matching email or copying a user-supplied UID.
 4. **Minimum access, after confirmation.** The first hosted pilot should request
    only `maps:read`, for a dedicated test identity containing a known synthetic map,
@@ -96,7 +97,8 @@ Official guidance checked for this work:
    `ANTTY_MCP_ENABLED=true`, canonical `ANTTY_APP_ORIGIN` and working Firebase Admin
    configuration. OAuth additionally needs the approved issuer, same-origin JWKS,
    allowed client IDs, algorithm and a `maps:read` ceiling described in
-   `docs/mcp-oauth.md`. Do not merely turn flags on while linking is unimplemented.
+   `docs/mcp-oauth.md`, plus the distinct public link-client configuration. Audit
+   deployed rules and configure approved attempt cleanup before enabling the link.
 6. **Actual hosted acceptance.** In the intended hosted account, verify 401 discovery,
    provider login/consent/cancel/reconnect, tools appearing, `mindmaps_list` followed
    by `mindmaps_get` of the known synthetic map, and absence/denial of write tools.

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
 import { KeyRound, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
 import { Button } from './Button';
+import McpIdentityLink from './McpIdentityLink';
 
 type Scope =
   | 'maps:read'
@@ -224,6 +225,7 @@ function AccountAgentAccess({ user }: { user: User }) {
           日曆必須先在「日曆」頁連結。
         </p>
       </div>
+      <McpIdentityLink user={user} />
       {disabled ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/30 p-4">
           <h3 className="font-semibold">Agent 存取尚未啟用</h3>
@@ -268,10 +270,7 @@ function AccountAgentAccess({ user }: { user: User }) {
                 />
               </label>
               <div className="flex gap-2">
-                <Button
-                  variant="secondary"
-                  onClick={() => void copySecret()}
-                >
+                <Button variant="secondary" onClick={() => void copySecret()}>
                   複製權杖
                 </Button>
                 <Button variant="ghost" onClick={() => setSecret('')}>

@@ -2,16 +2,16 @@
 
 Base main: `05ceb0c`. Branch: `feat/mcp-client-crud`.
 
-| Check | Result |
-| --- | --- |
-| Baseline before changes | 133 unit/native tests, 62 UI tests passed |
-| Final unit/native suite | 155 passed, including the actual SDK HTTP and OAuth read pilots |
-| Official SDK Streamable HTTP CRUD | Passed through actual HTTP handler/auth/data service |
-| Demo Firestore persistence | 6 emulator tests passed, including SDK CRUD with actual transactions |
-| Synthetic OAuth read pilot | Signature, issuer/resource/client/scopes, bound UID, read tools and immediate binding denial passed |
-| UI regression suite | 62 passed |
-| Typecheck / lint / production build | Passed |
-| Production unauthenticated probe | MCP 503; both OAuth metadata routes 404, connection not live |
+| Check                               | Result                                                                                                        |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Baseline before changes             | 133 unit/native tests, 62 UI tests passed                                                                     |
+| Final unit/native suite             | 163 passed, including SDK HTTP, synthetic OIDC linking/OAuth read and native disabled-handler checks          |
+| Official SDK Streamable HTTP CRUD   | Passed through actual HTTP handler/auth/data service                                                          |
+| Demo Firestore persistence          | 7 emulator tests passed, including SDK CRUD, linking transactions, private-path rules and revocation ordering |
+| Synthetic OAuth read pilot          | Signature, issuer/resource/client/scopes, bound UID, read tools and immediate binding denial passed           |
+| UI regression suite                 | 67 passed                                                                                                     |
+| Typecheck / lint / production build | Passed                                                                                                        |
+| Production unauthenticated probe    | MCP 503; both OAuth metadata routes 404, connection not live                                                  |
 
 The final suite includes the independently reviewed task-order saturation
 regression. PR CI separately reruns the checks on Node 22 and Node 26.
@@ -40,9 +40,35 @@ the HTTP acceptance also follows continuation pagination, races two writes with 
 revision (exactly one commits), and verifies a write-only board credential cannot
 read boards or receive unrelated contents in a mutation result.
 
-No external credentials, OAuth clients, identity bindings, IAM/environment changes,
+## Personal Auth0 identity-linking extension
+
+Added a disabled-by-default public-PKCE linking application flow, verified recent
+Firebase/OIDC dual proofs, single-use browser-bound attempts and fixed seven-day
+`maps:read` bindings. No new library or managed provider account is required to run
+the synthetic tests. The real SDK HTTP pilot now obtains its binding through the
+linking service and a cryptographically verified synthetic ID token, rather than
+inserting a static binding fixture; service revocation denies the next MCP request.
+
+Independent review identified a pending-callback/local-revocation race. It was
+reproduced as a failing actual Firestore emulator regression, then fixed by an
+owner revocation epoch captured and checked transactionally. The passing test also
+pauses a real service callback at exchange, revokes locally, resumes, and verifies
+the binding remains disabled. New explicit same-owner linking still works.
+Owner-filtered cursor pagination across 52 emulator bindings and UI controls avoids
+losing revocation access as subject records accumulate. The reviewer independently
+reran 13 focused Node tests and five linking UI tests, and found no remaining
+Critical/Important issue after the fix. Emulator results were inspected by review,
+not independently rerun by the reviewer.
+
+Provider comparison, current published free limits, actual configuration evidence
+and the concrete activation/approval bundle are in
+[mcp-personal-oauth-decision.md](mcp-personal-oauth-decision.md). Firestore TTL is a
+billable feature, not part of the free allowance; no billing change was made.
+
+No external credentials, OAuth clients, production identity bindings, IAM/environment changes,
 deployment, merge or production data mutations were made. **Hosted ChatGPT
 installation, actual provider consent and a real `mindmaps_list`/`mindmaps_get`
 call in 小兔 remain unverified and blocked**, as detailed in
-`docs/mcp-client-integration.md`. The provider-specific dual-proof identity-linking
-implementation is still a prerequisite; this PR is not an authorization server.
+`docs/mcp-client-integration.md`. The new linking code still needs approved provider
+configuration, actual rules/cleanup checks and live isolated acceptance. This PR
+is not an authorization server and does not complete the hosted connection.

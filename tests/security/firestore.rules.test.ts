@@ -97,6 +97,8 @@ test('legacy and credential paths remain inaccessible from client SDK', async ()
     'calendarOAuthStates/agent/attempts/state',
     'mcpTokens/token',
     'mcpOAuthBindings/binding',
+    'mcpOAuthLinkAttempts/attempt',
+    'mcpOAuthLinkOwners/alice',
     'users/alice/calendarConnections/google',
     'users/alice/mcpTokens/token',
   ]) {

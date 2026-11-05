@@ -15,6 +15,9 @@ import type { McpOAuthConfig } from '../server/mcpOAuth.ts';
 import type { McpDataService } from '../server/mcpServer.ts';
 import { generateKeyPair, exportJWK, createLocalJWKSet, SignJWT } from 'jose';
 import { createMcpOAuthAuthenticator, oauthBindingId } from '../server/mcpOAuth.ts';
+import { createMcpLinkService, validateLinkAttempt, type LinkAttempt } from '../server/mcpLink.ts';
+import { createLinkIdentityVerifier } from '../server/mcpLinkProvider.ts';
+import { createHash } from 'node:crypto';
 
 type Handler = (req: IncomingMessage, res: ServerResponse) => void | Promise<void>;
 async function serve(factory: (origin: () => string) => Handler) {
@@ -41,13 +44,13 @@ const data = {
   },
 } as McpDataService;
 
-test('real SDK minimal OAuth read verifies signature, bound identity and current binding on every HTTP call', async () => {
+test('verified OIDC/Firebase linking enables the real SDK read pilot; local revocation denies the next HTTP call', async () => {
   const keys = await generateKeyPair('RS256');
   const key = createLocalJWKSet({
     keys: [{ ...(await exportJWK(keys.publicKey)), kid: 'synthetic' }],
   });
   const now = Date.now();
-  let bound = true;
+  let binding: unknown = null;
   let reads = 0;
   const app = await serve((origin) => {
     const config = { ...oauthConfig(origin()), scopes: ['maps:read'] as const };
@@ -57,20 +60,7 @@ test('real SDK minimal OAuth read verifies signature, bound identity and current
         bindings: {
           async get(id) {
             assert.equal(id, oauthBindingId(config.issuer, 'provider-alice'));
-            return bound
-              ? {
-                  schemaVersion: 1,
-                  issuer: config.issuer,
-                  subject: 'provider-alice',
-                  ownerUid: 'firebase-alice',
-                  clientIds: ['approved-client'],
-                  scopes: ['maps:read'],
-                  enabled: true,
-                  firebaseAuthTime: now - 60_000,
-                  validAfter: now - 60_000,
-                  expiresAt: now + 60_000,
-                }
-              : null;
+            return binding;
           },
         },
         getAccount: async (uid) => {
@@ -108,6 +98,61 @@ test('real SDK minimal OAuth read verifies signature, bound identity and current
       },
     });
   });
+  const attempts = new Map<string, LinkAttempt>();
+  const linkConfig = {
+    oauth: { ...oauthConfig(app.origin), scopes: ['maps:read'] as ['maps:read'] },
+    clientId: 'public-link-client',
+    callbackUrl: `${app.origin}/api/mcp-link?action=callback`,
+  };
+  const verifyIdentity = createLinkIdentityVerifier(linkConfig, key, () => now);
+  const linking = createMcpLinkService(linkConfig, {
+    now: () => now,
+    getAccount: async () => ({ disabled: false }),
+    async exchange(_code, _verifier, nonce) {
+      const idToken = await new SignJWT({
+        nonce,
+        auth_time: Math.floor(now / 1000),
+        uid: 'untrusted-uid',
+      })
+        .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: 'synthetic' })
+        .setSubject('provider-alice')
+        .setIssuer(linkConfig.oauth.issuer)
+        .setAudience(linkConfig.clientId)
+        .setIssuedAt(Math.floor(now / 1000))
+        .setExpirationTime(Math.floor(now / 1000) + 60)
+        .sign(keys.privateKey);
+      return verifyIdentity(idToken, nonce);
+    },
+    repository: {
+      async put(id, row) {
+        attempts.set(id, { ...row, revocationEpoch: 'e'.repeat(43) });
+      },
+      async take(id, browserHash, fingerprint, timestamp) {
+        const row = validateLinkAttempt(attempts.get(id), browserHash, fingerprint, timestamp);
+        attempts.delete(id);
+        return row;
+      },
+      async bind(_id, row) {
+        binding = row;
+      },
+      async list() {
+        return [];
+      },
+      async revoke(uid) {
+        assert.equal(uid, 'firebase-alice');
+        binding = null;
+      },
+    },
+  });
+  const start = await linking.begin({ uid: 'firebase-alice', authTime: now - 1000 });
+  const state = new URL(start.authorizationUrl).searchParams.get('state')!;
+  assert.ok(attempts.has(createHash('sha256').update(state).digest('hex')));
+  await linking.complete({
+    state,
+    code: 'synthetic-code',
+    browserSecret: start.browserSecret,
+    issuer: linkConfig.oauth.issuer,
+  });
   const token = await new SignJWT({
     sub: 'provider-alice',
     uid: 'attacker-selected-uid',
@@ -144,7 +189,10 @@ test('real SDK minimal OAuth read verifies signature, bound identity and current
       true,
     );
     assert.equal(reads, 2);
-    bound = false;
+    await linking.revoke(
+      'firebase-alice',
+      oauthBindingId(linkConfig.oauth.issuer, 'provider-alice'),
+    );
     await assert.rejects(client.listTools(), (error) => {
       assert.equal((error as { code: number }).code, 401);
       return true;
