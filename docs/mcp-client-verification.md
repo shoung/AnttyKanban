@@ -4,7 +4,7 @@ Selected implementation: existing Firebase login plus Antty-owned OAuth. Auth0 o
 
 | Check                           | Current result                                                                                                          |
 | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Full unit/native suite          | 181 passed                                                                                                              |
+| Full unit/native suite          | 183 passed                                                                                                              |
 | UI regression suite             | 73 passed                                                                                                               |
 | Demo Firestore/Storage emulator | 9 passed, including real OAuth transaction races and bounded version-checked cleanup                                    |
 | Local real MCP SDK OAuth        | Discovery, S256, browser consent, code exchange, synthetic map list/get, and post-revoke denial passed                  |
@@ -17,6 +17,12 @@ Selected implementation: existing Firebase login plus Antty-owned OAuth. Auth0 o
 Additional regressions cover account switch during delayed reauthentication, StrictMode, malformed response data, scope narrowing/expansion, original-state cancellation, expiry, wrong PKCE without code consumption, sibling grant preservation, and authenticated replay revocation. Persistent authorization budgets precede public writes. Manual cleanup is dry-run first, max100, expiry at least24h old, reviewed hash and transactional version recheck, no TTL or owner-epoch deletion.
 
 The SDK uses synthetic verified-identity fixtures rather than an actual Firebase Google sign-in. Local protocol success does not establish live browser login or hosted ChatGPT installation. Deployment must verify real rules, WIF, frontend security headers and public endpoint reachability.
+
+## Follow-up reliability and public revocation coverage
+
+A subsequent independent review identified that Firestore code14 and Firebase Admin network-request-failed errors could be incorrectly converted to invalid-token responses. New regressions reproduced both as 401 before the fix. Service dependency boundaries now return sanitized503 temporarily_unavailable for SDK/transport failures (including unknown failures); explicit missing/disabled/revoked account and invalid-token decisions remain authorization failures. The real HTTP/SDK regressions assert no WWW-Authenticate challenge or extra authorization redirect during outages and successful retry with the original token/code after recovery.
+
+The SDK pilot now revokes through the actual POST /oauth/revoke route, then verifies the next MCP request is denied. HTTP coverage includes wrong approved client, unknown token, duplicate client parameters, foreign Origin, unsupported GET and repeat revocation. Follow-up full validation:183 unit/native,73 UI,9 emulator checks; typecheck/lint/build passed. Actual production rules and hosted ChatGPT callback/connection remain unverified.
 
 ---
 

@@ -50,15 +50,23 @@ export function memoryOAuthRepository(): OAuthRepository {
   };
 }
 export function oauthFixture(repository = memoryOAuthRepository()) {
-  const state = { now: NOW, disabled: false, cutoff: NOW - 120_000 };
+  const state = {
+    now: NOW,
+    disabled: false,
+    cutoff: NOW - 120_000,
+    accountFailure: undefined as unknown,
+  };
   const config = getFirebaseOAuthConfig(settings, env)!;
   const service = createFirebaseOAuthService(config, {
     repository,
     now: () => state.now,
-    getAccount: async () => ({
-      disabled: state.disabled,
-      tokensValidAfterTime: new Date(state.cutoff).toISOString(),
-    }),
+    getAccount: async () => {
+      if (state.accountFailure) throw state.accountFailure;
+      return {
+        disabled: state.disabled,
+        tokensValidAfterTime: new Date(state.cutoff).toISOString(),
+      };
+    },
   });
   const identity = { uid: 'alice', authTime: NOW - 30_000 };
   const parameters = new URLSearchParams({

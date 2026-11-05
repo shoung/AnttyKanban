@@ -10,10 +10,18 @@ import { createFirebaseOAuthHandler } from '../api/mcp-auth.ts';
 import { createMcpHandler } from '../api/mcp.ts';
 import { createMcpOAuthMetadataHandler } from '../api/mcp-oauth-metadata.ts';
 import type { McpDataService } from '../server/mcpServer.ts';
-import { oauthFixture, settings } from './fixtures/firebase-oauth.ts';
+import { memoryOAuthRepository, oauthFixture, settings } from './fixtures/firebase-oauth.ts';
+import type { OAuthRepository } from '../server/mcpFirebaseOAuth.ts';
 
 test('real SDK discovers first-party OAuth, performs S256 code exchange, reads synthetic maps and fails after revoke', async () => {
-  const f = oauthFixture();
+  const backing = memoryOAuthRepository();
+  let repositoryFailure: unknown;
+  const repository: OAuthRepository = {
+    ...backing,
+    transaction: (work) =>
+      repositoryFailure ? Promise.reject(repositoryFailure) : backing.transaction(work),
+  };
+  const f = oauthFixture(repository);
   let reads = 0;
   const oauth = createFirebaseOAuthHandler({
     config: () => f.config,
@@ -68,6 +76,7 @@ test('real SDK discovers first-party OAuth, performs S256 code exchange, reads s
     assert.equal(url.origin, settings.origin, 'test must never reach an external service');
     return fetch(`${local}${url.pathname}${url.search}`, init);
   };
+  let authorizationRedirects = 0;
   let tokens: OAuthTokens | undefined,
     verifier = '',
     authorization: URL | undefined;
@@ -91,6 +100,7 @@ test('real SDK discovers first-party OAuth, performs S256 code exchange, reads s
     codeVerifier: () => verifier,
     state: () => 'synthetic-client-state',
     redirectToAuthorization: (url) => {
+      authorizationRedirects++;
       authorization = url;
     },
   };
@@ -129,6 +139,7 @@ test('real SDK discovers first-party OAuth, performs S256 code exchange, reads s
     assert.equal(tokens?.refresh_token, undefined);
     await client.connect(
       new StreamableHTTPClientTransport(new URL(f.config.resource), {
+        authProvider: provider,
         fetch: localFetch,
         requestInit: { headers: { Authorization: `Bearer ${tokens!.access_token}` } },
       }),
@@ -144,8 +155,42 @@ test('real SDK discovers first-party OAuth, performs S256 code exchange, reads s
       undefined,
     );
     assert.equal(reads, 2);
-    const [grant] = await f.service.list('alice');
-    await f.service.revoke('alice', grant.id);
+    for (const dependency of ['repository', 'account']) {
+      if (dependency === 'repository')
+        repositoryFailure = Object.assign(new Error('private-upstream-db'), { code: 14 });
+      else
+        f.state.accountFailure = Object.assign(new Error('private-upstream-auth'), {
+          code: 'auth/network-request-failed',
+        });
+      const unavailable = await localFetch(f.config.resource, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${tokens!.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'tools/list', params: {} }),
+      });
+      assert.equal(unavailable.status, 503);
+      assert.equal(unavailable.headers.get('www-authenticate'), null);
+      assert.doesNotMatch(await unavailable.text(), /private-upstream/);
+      await assert.rejects(client.listTools());
+      assert.equal(authorizationRedirects, 1);
+      assert.equal(reads, 2);
+      repositoryFailure = undefined;
+      f.state.accountFailure = undefined;
+      assert.equal((await client.listTools()).tools.length, 2);
+      assert.equal(authorizationRedirects, 1);
+    }
+    const revoked = await localFetch(`${settings.origin}/oauth/revoke`, {
+      method: 'POST',
+      body: new URLSearchParams({
+        client_id: 'chatgpt-personal',
+        token: tokens!.access_token,
+        token_type_hint: 'access_token',
+      }),
+    });
+    assert.equal(revoked.status, 200);
+    assert.deepEqual(await revoked.json(), {});
     await assert.rejects(client.listTools());
     assert.equal(reads, 2);
   } finally {

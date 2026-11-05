@@ -2,12 +2,99 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { getFirebaseOAuthConfig } from '../server/mcpFirebaseOAuth.ts';
 import { NOW, settings, env, oauthFixture } from './fixtures/firebase-oauth.ts';
-import { createFirebaseOAuthService } from '../server/mcpFirebaseOAuth.ts';
+import { createFirebaseOAuthService, type OAuthRepository } from '../server/mcpFirebaseOAuth.ts';
 import { memoryOAuthRepository } from './fixtures/firebase-oauth.ts';
 import { getMcpLinkConfig } from '../server/mcpLink.ts';
 
 const rejects = (work: Promise<unknown>, error = 'invalid_grant') =>
   assert.rejects(work, (failure: unknown) => (failure as { error: string }).error === error);
+
+const serviceUnavailable = (failure: unknown) => {
+  assert.equal((failure as { status: number }).status, 503);
+  assert.equal((failure as { error: string }).error, 'temporarily_unavailable');
+  assert.doesNotMatch((failure as Error).message, /private-upstream/);
+  return true;
+};
+
+test('Firestore unavailable and unknown repository failures produce 503, preserve grants and permit retry after recovery', async () => {
+  const backing = memoryOAuthRepository();
+  let failure: unknown;
+  const repository: OAuthRepository = {
+    transaction: (work) => (failure ? Promise.reject(failure) : backing.transaction(work)),
+    listGrants: (uid, after) =>
+      failure ? Promise.reject(failure) : backing.listGrants(uid, after),
+  };
+  const f = oauthFixture(repository),
+    { code } = await f.approve(),
+    token = await f.exchange(code),
+    pending = await f.approve();
+  for (const fault of [
+    Object.assign(new Error('private-upstream-details'), { code: 14 }),
+    new Error('private-upstream-network'),
+    Object.assign(new Error('private-upstream-status'), { status: 401 }),
+  ]) {
+    failure = fault;
+    await assert.rejects(f.service.authenticate(token.access_token), serviceUnavailable);
+    await assert.rejects(f.exchange(pending.code), serviceUnavailable);
+    await assert.rejects(f.service.list(f.identity.uid), serviceUnavailable);
+    failure = undefined;
+    assert.equal((await f.service.authenticate(token.access_token)).uid, f.identity.uid);
+  }
+  assert.equal(
+    (await f.service.authenticate((await f.exchange(pending.code)).access_token)).uid,
+    f.identity.uid,
+  );
+  await assert.rejects(
+    f.service.authenticate(`anttyoa_${'x'.repeat(43)}`),
+    (e: unknown) => (e as { status: number }).status === 401,
+  );
+});
+
+test('Firebase Admin network failures are 503 for token verification and consent, while missing/disabled/revoked accounts remain invalid', async () => {
+  const f = oauthFixture(),
+    { code } = await f.approve(),
+    token = await f.exchange(code),
+    pending = await f.begin(),
+    next = await f.approve();
+  for (const fault of [
+    Object.assign(new Error('private-upstream-auth'), { code: 'auth/network-request-failed' }),
+    new Error('private-upstream-transport'),
+  ]) {
+    f.state.accountFailure = fault;
+    await assert.rejects(f.service.authenticate(token.access_token), serviceUnavailable);
+    await assert.rejects(
+      f.service.details(f.identity, pending.id, pending.browserSecret),
+      serviceUnavailable,
+    );
+    await assert.rejects(
+      f.service.decide(f.identity, pending.id, pending.browserSecret, true),
+      serviceUnavailable,
+    );
+    await assert.rejects(f.exchange(next.code), serviceUnavailable);
+    f.state.accountFailure = undefined;
+    assert.equal((await f.service.authenticate(token.access_token)).uid, f.identity.uid);
+  }
+  f.state.accountFailure = Object.assign(new Error('private-upstream-user-not-found'), {
+    code: 'auth/user-not-found',
+  });
+  await assert.rejects(
+    f.service.authenticate(token.access_token),
+    (e: unknown) => (e as { status: number }).status === 401,
+  );
+  await rejects(f.service.details(f.identity, pending.id, pending.browserSecret));
+  f.state.accountFailure = undefined;
+  f.state.disabled = true;
+  await assert.rejects(
+    f.service.authenticate(token.access_token),
+    (e: unknown) => (e as { status: number }).status === 401,
+  );
+  f.state.disabled = false;
+  f.state.cutoff = NOW + 1;
+  await assert.rejects(
+    f.service.authenticate(token.access_token),
+    (e: unknown) => (e as { status: number }).status === 401,
+  );
+});
 
 test('Firebase OAuth is opt-in, fixed public clients only, and mutually exclusive with managed OAuth', () => {
   assert.equal(getFirebaseOAuthConfig(settings, {}), null);
@@ -18,6 +105,7 @@ test('Firebase OAuth is opt-in, fixed public clients only, and mutually exclusiv
     }),
     null,
   );
+
   for (const patch of [
     { ANTTY_MCP_FIREBASE_OAUTH_CLIENTS: '[]' },
     {

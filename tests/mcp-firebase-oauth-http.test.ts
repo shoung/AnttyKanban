@@ -73,8 +73,64 @@ test('OAuth HTTP serves discovery and bounded public token exchange while requir
       body: new URLSearchParams({ client_id: 'x', grant_type: 'authorization_code' }),
     });
     assert.equal(duplicated.status, 400);
-    const token = await f.exchange(code);
+    const form = new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: 'chatgpt-personal',
+      redirect_uri: 'https://chatgpt.com/callback',
+      resource: f.config.resource,
+      code,
+      code_verifier: 'v'.repeat(43),
+    });
+    f.state.accountFailure = Object.assign(new Error('private-upstream-network'), {
+      code: 'auth/network-request-failed',
+    });
+    const failedExchange = await fetch(`${base}/oauth/token`, { method: 'POST', body: form });
+    assert.equal(failedExchange.status, 503);
+    assert.deepEqual(await failedExchange.json(), { error: 'temporarily_unavailable' });
+    assert.equal(failedExchange.headers.get('www-authenticate'), null);
+    f.state.accountFailure = undefined;
+    const retriedExchange = await fetch(`${base}/oauth/token`, { method: 'POST', body: form });
+    assert.equal(retriedExchange.status, 200);
+    const token = await retriedExchange.json();
     assert.equal((await f.service.authenticate(token.access_token)).uid, 'alice');
+    assert.equal((await fetch(`${base}/oauth/revoke`)).status, 405);
+    const revoke = (value: string, client = 'chatgpt-personal') =>
+      fetch(`${base}/oauth/revoke`, {
+        method: 'POST',
+        body: new URLSearchParams({ token: value, client_id: client }),
+      });
+    f.config.clients.push({
+      id: 'other-approved-client',
+      name: 'Other test client',
+      redirectUris: ['https://chatgpt.com/other-callback'],
+    });
+    assert.equal((await revoke(token.access_token, 'other-approved-client')).status, 200);
+    assert.equal((await f.service.authenticate(token.access_token)).uid, 'alice');
+    assert.equal((await revoke(`anttyoa_${'x'.repeat(43)}`)).status, 200);
+    const ambiguous = new URLSearchParams({
+      token: token.access_token,
+      client_id: 'chatgpt-personal',
+    });
+    ambiguous.append('client_id', 'other-approved-client');
+    assert.equal(
+      (await fetch(`${base}/oauth/revoke`, { method: 'POST', body: ambiguous })).status,
+      400,
+    );
+    const foreignOrigin = await fetch(`${base}/oauth/revoke`, {
+      method: 'POST',
+      headers: { Origin: 'https://evil.example' },
+      body: new URLSearchParams({ token: token.access_token, client_id: 'chatgpt-personal' }),
+    });
+    assert.equal(foreignOrigin.status, 403);
+    assert.equal((await f.service.authenticate(token.access_token)).uid, 'alice');
+    const revoked = await revoke(token.access_token);
+    assert.equal(revoked.status, 200);
+    assert.deepEqual(await revoked.json(), {});
+    await assert.rejects(
+      f.service.authenticate(token.access_token),
+      (e: unknown) => (e as { status: number }).status === 401,
+    );
+    assert.equal((await revoke(token.access_token)).status, 200);
     assert.ok(quota >= 3);
     assert.equal(approve.headers.get('cache-control'), 'no-store');
     assert.equal(approve.headers.get('referrer-policy'), 'no-referrer');

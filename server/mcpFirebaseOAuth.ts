@@ -36,8 +36,17 @@ export interface FirebaseOAuthConfig {
   scopes: McpScope[];
   clients: z.infer<typeof clientSchema>[];
 }
+class OAuthRequestError extends Error {
+  readonly error: string;
+  readonly status: number;
+  constructor(error: string, status: number) {
+    super('OAuth request could not be completed');
+    this.error = error;
+    this.status = status;
+  }
+}
 export function oauthError(error = 'invalid_grant', status = 400): never {
-  throw Object.assign(new Error('OAuth request could not be completed'), { error, status });
+  throw new OAuthRequestError(error, status);
 }
 export function getFirebaseOAuthConfig(
   settings: McpConfig,
@@ -156,7 +165,21 @@ export function createFirebaseOAuthService(
   config: FirebaseOAuthConfig,
   dependencies: Dependencies,
 ) {
-  const { repository } = dependencies;
+  // Only our own authorization decisions and stored-record validation failures are
+  // auth failures. SDK/transport errors (including unknown codes) fail closed as
+  // service outages, without exposing upstream messages or prompting reauthorization.
+  async function backend<T>(work: () => Promise<T>): Promise<T> {
+    try {
+      return await work();
+    } catch (failure) {
+      if (failure instanceof OAuthRequestError || failure instanceof z.ZodError) throw failure;
+      return oauthError('temporarily_unavailable', 503);
+    }
+  }
+  const repository: OAuthRepository = {
+    transaction: (work) => backend(() => dependencies.repository.transaction(work)),
+    listGrants: (uid, after) => backend(() => dependencies.repository.listGrants(uid, after)),
+  };
   const now = dependencies.now ?? Date.now;
   const client = (id: string, redirect?: string) => {
     const value = config.clients.find((c) => c.id === id);
@@ -165,11 +188,22 @@ export function createFirebaseOAuthService(
     return value;
   };
   const account = async (uid: string, authTime?: number) => {
+    let user: Awaited<ReturnType<Dependencies['getAccount']>>;
     try {
-      assertActiveMcpAccount(await dependencies.getAccount(enforceUid(uid)), authTime);
+      enforceUid(uid);
+    } catch {
+      return oauthError();
+    }
+    try {
+      user = await dependencies.getAccount(uid);
     } catch (failure) {
-      if ((failure as { status?: number }).status === 503) throw failure;
-      oauthError();
+      if ((failure as { code?: unknown })?.code === 'auth/user-not-found') return oauthError();
+      return oauthError('temporarily_unavailable', 503);
+    }
+    try {
+      assertActiveMcpAccount(user, authTime);
+    } catch {
+      return oauthError();
     }
   };
   const bound = (row: z.infer<typeof requestSchema>, browser: string) => {
@@ -397,8 +431,10 @@ export function createFirebaseOAuthService(
           authentication: 'oauth',
         };
       } catch (failure) {
-        if ((failure as { status?: number }).status === 503) throw failure;
-        return oauthError('invalid_token', 401);
+        if (failure instanceof OAuthRequestError && failure.status === 503) throw failure;
+        if (failure instanceof OAuthRequestError || failure instanceof z.ZodError)
+          return oauthError('invalid_token', 401);
+        return oauthError('temporarily_unavailable', 503);
       }
     },
     async list(uid: string, after?: string) {
