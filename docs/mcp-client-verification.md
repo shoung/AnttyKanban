@@ -2,16 +2,16 @@
 
 Base main: `05ceb0c`. Branch: `feat/mcp-client-crud`.
 
-| Check                               | Result                                                                                                        |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Baseline before changes             | 133 unit/native tests, 62 UI tests passed                                                                     |
-| Final unit/native suite             | 163 passed, including SDK HTTP, synthetic OIDC linking/OAuth read and native disabled-handler checks          |
-| Official SDK Streamable HTTP CRUD   | Passed through actual HTTP handler/auth/data service                                                          |
-| Demo Firestore persistence          | 7 emulator tests passed, including SDK CRUD, linking transactions, private-path rules and revocation ordering |
-| Synthetic OAuth read pilot          | Signature, issuer/resource/client/scopes, bound UID, read tools and immediate binding denial passed           |
-| UI regression suite                 | 67 passed                                                                                                     |
-| Typecheck / lint / production build | Passed                                                                                                        |
-| Production unauthenticated probe    | MCP 503; both OAuth metadata routes 404, connection not live                                                  |
+| Check                               | Result                                                                                                                                   |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Baseline before changes             | 133 unit/native tests, 62 UI tests passed                                                                                                |
+| Final unit/native suite             | 168 passed, including SDK HTTP, synthetic OIDC linking/OAuth read, manual-cleanup guards and native disabled-handler checks              |
+| Official SDK Streamable HTTP CRUD   | Passed through actual HTTP handler/auth/data service                                                                                     |
+| Demo Firestore persistence          | 8 emulator tests passed, including SDK CRUD, linking transactions, private-path rules, revocation ordering and restricted manual cleanup |
+| Synthetic OAuth read pilot          | Signature, issuer/resource/client/scopes, bound UID, read tools and immediate binding denial passed                                      |
+| UI regression suite                 | 67 passed                                                                                                                                |
+| Typecheck / lint / production build | Passed                                                                                                                                   |
+| Production unauthenticated probe    | MCP 503; both OAuth metadata routes 404, connection not live                                                                             |
 
 The final suite includes the independently reviewed task-order saturation
 regression. PR CI separately reruns the checks on Node 22 and Node 26.
@@ -59,6 +59,25 @@ losing revocation access as subject records accumulate. The reviewer independent
 reran 13 focused Node tests and five linking UI tests, and found no remaining
 Critical/Important issue after the fix. Emulator results were inspected by review,
 not independently rerun by the reviewer.
+
+## Restricted-test preparation without TTL
+
+`scripts/mcp-link-cleanup.ts` is a manual operator utility, dry-run by default.
+Five additional unit/CLI checks verify exact owner/project/cutoff inputs, no
+credential initialization on missing arguments, no secret output, reviewed plan
+hashes and preservation of concurrent changes. An additional actual demo Firestore
+test verifies owner filtering, projected fields, version rechecks and preservation
+of live/foreign/malformed attempts, bindings and revocation epochs. No live cleanup
+was run, and no TTL, scheduler, billing change or new Admin credential was created.
+Independent read-only review reran the five tests and found no Critical/Important
+issue; it inspected the eight-test emulator log rather than rerunning emulators.
+
+Read-only preparation found an Auth0 Dashboard login screen, no configured Auth0
+connection, Vercel deployment protection, no custom test environment/domain, and
+the code's production-only WIF boundary. The exact signup/terms, identity,
+credential, hosting and cleanup operator-access gates are documented in
+[mcp-restricted-test-setup.md](mcp-restricted-test-setup.md). No personal identity was
+submitted and no signup/login/terms agreement was completed.
 
 Provider comparison, current published free limits, actual configuration evidence
 and the concrete activation/approval bundle are in
