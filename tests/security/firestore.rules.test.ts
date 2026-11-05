@@ -99,6 +99,11 @@ test('legacy and credential paths remain inaccessible from client SDK', async ()
     'mcpOAuthBindings/binding',
     'mcpOAuthLinkAttempts/attempt',
     'mcpOAuthLinkOwners/alice',
+    'mcpAuthRequests/request',
+    'mcpAuthOwners/alice',
+    'mcpAuthGrants/grant',
+    'mcpAuthCodes/code',
+    'mcpAuthTokens/token',
     'users/alice/calendarConnections/google',
     'users/alice/mcpTokens/token',
   ]) {

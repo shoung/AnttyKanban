@@ -1,3 +1,9 @@
+# Current direction
+
+The user stopped Auth0 onboarding and selected Firebase-backed Antty OAuth. This file retains the earlier provider preparation as historical context; its signup/configuration steps must not be executed. Use [mcp-firebase-oauth.md](mcp-firebase-oauth.md) for the current flow and activation gates. An earlier Google/Auth0 sign-in reached profile onboarding; full registration/tenant creation was not confirmed. No new Auth0 setup is authorized.
+
+---
+
 # Restricted Auth0 test: registration, credentials and manual cleanup
 
 Prepared 2026-11-05 after the owner approved **preparation** of a seven-day `maps:read` pilot with synthetic mind-map data. Account submission, actual credential creation, persistent access and deployment remain action-specific approval gates. No signup, identity, credential, consent grant, billing change or deployment has been performed.

@@ -1,3 +1,9 @@
+# Selected hosted authorization
+
+Use [Firebase-backed Antty OAuth](mcp-firebase-oauth.md). The user selected it instead of the historical managed/Auth0 proposal below. It is implemented for isolated tests and remains disabled until approved deployment, fixed public-client configuration and real hosted ChatGPT acceptance. No Auth0 resources are needed.
+
+---
+
 # MCP integration and hosted ChatGPT acceptance
 
 ## Status on 2026-11-05

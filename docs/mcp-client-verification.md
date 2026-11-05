@@ -1,3 +1,27 @@
+# Firebase OAuth verification - 2026-11-05
+
+Selected implementation: existing Firebase login plus Antty-owned OAuth. Auth0 onboarding is stopped. See [current design and activation gates](mcp-firebase-oauth.md). The historical managed-provider evidence below is retained as a prior snapshot, not the current plan.
+
+| Check                           | Current result                                                                                                          |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Full unit/native suite          | 181 passed                                                                                                              |
+| UI regression suite             | 73 passed                                                                                                               |
+| Demo Firestore/Storage emulator | 9 passed, including real OAuth transaction races and bounded version-checked cleanup                                    |
+| Local real MCP SDK OAuth        | Discovery, S256, browser consent, code exchange, synthetic map list/get, and post-revoke denial passed                  |
+| Existing isolated SDK CRUD      | Mindmap, board and synthetic Calendar CRUD passed with existing isolation/conflict checks                               |
+| Typecheck/lint/build            | Passed; existing vendor-comment and >500KB chunk warnings only                                                          |
+| Independent security review     | No remaining Critical/Important findings; fixed callback query encoding with RED/GREEN approval+cancel regression       |
+| Hosted ChatGPT connection       | Not performed; approved deployment, exact public-client/callback configuration and isolated UID/data are still required |
+| External actions                | No deployment/merge, credential configuration, production grant or data mutation; Auth0 remains paused                  |
+
+Additional regressions cover account switch during delayed reauthentication, StrictMode, malformed response data, scope narrowing/expansion, original-state cancellation, expiry, wrong PKCE without code consumption, sibling grant preservation, and authenticated replay revocation. Persistent authorization budgets precede public writes. Manual cleanup is dry-run first, max100, expiry at least24h old, reviewed hash and transactional version recheck, no TTL or owner-epoch deletion.
+
+The SDK uses synthetic verified-identity fixtures rather than an actual Firebase Google sign-in. Local protocol success does not establish live browser login or hosted ChatGPT installation. Deployment must verify real rules, WIF, frontend security headers and public endpoint reachability.
+
+---
+
+## Historical resource-server/Auth0 preparation evidence
+
 # MCP client verification — 2026-11-05
 
 Base main: `05ceb0c`. Branch: `feat/mcp-client-crud`.

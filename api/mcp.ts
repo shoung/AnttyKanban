@@ -20,6 +20,13 @@ import {
   type McpConfig,
 } from '../server/mcpHttp.js';
 import type { McpPrincipal } from '../server/mcpPolicy.js';
+import {
+  createFirebaseOAuthService,
+  getFirebaseOAuthConfig,
+  type FirebaseOAuthConfig,
+} from '../server/mcpFirebaseOAuth.js';
+import { firestoreOAuthRepository } from '../server/mcpFirebaseOAuthStore.js';
+import { getAdminAuth } from '../server/firebase.js';
 
 // Disable platform eager parsing so oversized bodies never reach the SDK.
 export const config = { api: { bodyParser: false } };
@@ -32,6 +39,10 @@ interface Dependencies {
     config(settings: McpConfig): McpOAuthConfig | null;
     authenticate(token: string, config: McpOAuthConfig): Promise<McpPrincipal>;
   };
+  firebaseOauth?: {
+    config(settings: McpConfig): FirebaseOAuthConfig | null;
+    authenticate(token: string, config: FirebaseOAuthConfig): Promise<McpPrincipal>;
+  };
 }
 export function createMcpHandler(
   dependencies: Dependencies = {
@@ -40,6 +51,14 @@ export function createMcpHandler(
     quota: consumeMcpQuota,
     data: createMcpDataService,
     oauth: { config: getMcpOAuthConfig, authenticate: authenticateMcpOAuthToken },
+    firebaseOauth: {
+      config: getFirebaseOAuthConfig,
+      authenticate: (token, settings) =>
+        createFirebaseOAuthService(settings, {
+          repository: firestoreOAuthRepository(),
+          getAccount: (uid) => getAdminAuth().getUser(uid),
+        }).authenticate(token),
+    },
   },
 ) {
   const preAuthLimiter = new LocalRateLimiter(120, 60_000);
@@ -47,6 +66,7 @@ export function createMcpHandler(
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     let oauth: McpOAuthConfig | null = null;
+    let firebaseOauth: FirebaseOAuthConfig | null = null;
     try {
       const settings = dependencies.config();
       assertMcpRequestOrigin(req.headers, settings, false);
@@ -55,12 +75,17 @@ export function createMcpHandler(
       // is never retried as a PAT or a Firebase ID token.
       const authorization = req.headers.authorization;
       const isPat = typeof authorization === 'string' && /^Bearer antty_/i.test(authorization);
-      if (!isPat && dependencies.oauth) oauth = dependencies.oauth.config(settings);
+      if (!isPat) {
+        firebaseOauth = dependencies.firebaseOauth?.config(settings) ?? null;
+        if (!firebaseOauth && dependencies.oauth) oauth = dependencies.oauth.config(settings);
+      }
       const token = bearerToken(authorization);
       const principal =
-        oauth && dependencies.oauth
-          ? await dependencies.oauth.authenticate(token, oauth)
-          : await dependencies.authenticate(token);
+        firebaseOauth && dependencies.firebaseOauth
+          ? await dependencies.firebaseOauth.authenticate(token, firebaseOauth)
+          : oauth && dependencies.oauth
+            ? await dependencies.oauth.authenticate(token, oauth)
+            : await dependencies.authenticate(token);
       await dependencies.quota(`mcp:${principal.uid}`, 120, 60_000);
       if (req.method !== 'POST') {
         res.setHeader('Allow', 'POST');
@@ -87,8 +112,8 @@ export function createMcpHandler(
       if (failure.status === 401)
         res.setHeader(
           'WWW-Authenticate',
-          oauth
-            ? `Bearer realm="antty-mcp", resource_metadata="${oauth.metadataUrl}", scope="${oauth.scopes.join(' ')}"`
+          firebaseOauth || oauth
+            ? `Bearer realm="antty-mcp", resource_metadata="${(firebaseOauth || oauth)!.metadataUrl}", scope="${(firebaseOauth || oauth)!.scopes.join(' ')}"`
             : 'Bearer realm="antty-mcp"',
         );
       if (failure.status === 429) res.setHeader('Retry-After', '60');

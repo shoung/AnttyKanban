@@ -1,5 +1,7 @@
 # Personal ChatGPT MCP: provider decision and activation request
 
+> Superseded: the user selected Firebase login plus Antty-owned OAuth and stopped Auth0 onboarding. The remainder is the earlier provider comparison/activation proposal, not the current decision or registration status. See [Firebase MCP OAuth](mcp-firebase-oauth.md) for current implementation, exact activation gates and paused-signup state.
+
 Checked 2026-11-05. **Selected implementation: Auth0 Free, a separate personal tenant, existing Firebase workspace ownership.** This is a code/design selection, not a created tenant, purchased plan, deployed feature or connected ChatGPT plugin.
 
 ## Provider comparison

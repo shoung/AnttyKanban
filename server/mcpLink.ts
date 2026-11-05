@@ -35,7 +35,8 @@ export function getMcpLinkConfig(
   oauth: McpOAuthConfig | null,
   env: Record<string, string | undefined> = process.env,
 ): McpLinkConfig | null {
-  if (env.ANTTY_MCP_LINK_ENABLED !== 'true') return null;
+  if (env.ANTTY_MCP_FIREBASE_OAUTH_ENABLED === 'true' || env.ANTTY_MCP_LINK_ENABLED !== 'true')
+    return null;
   if (!oauth) return linkFailure(503);
   try {
     const issuer = new URL(oauth.issuer);

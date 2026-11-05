@@ -1,16 +1,17 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { getMcpConfig, jsonResponse, safeMcpError, type McpConfig } from '../server/mcpHttp.js';
 import { getMcpOAuthConfig, type McpOAuthConfig } from '../server/mcpOAuth.js';
+import { getFirebaseOAuthConfig } from '../server/mcpFirebaseOAuth.js';
 
 interface Dependencies {
   config(): McpConfig;
-  oauth(settings: McpConfig): McpOAuthConfig | null;
+  oauth(settings: McpConfig): Pick<McpOAuthConfig, 'resource' | 'issuer' | 'scopes'> | null;
 }
 /** Public metadata contains no account data. Credential-bearing endpoints keep their origin checks. */
 export function createMcpOAuthMetadataHandler(
   dependencies: Dependencies = {
     config: getMcpConfig,
-    oauth: getMcpOAuthConfig,
+    oauth: (settings) => getFirebaseOAuthConfig(settings) ?? getMcpOAuthConfig(settings),
   },
 ) {
   return async (req: IncomingMessage, res: ServerResponse) => {
