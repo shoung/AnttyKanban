@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
 import { KeyRound, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
 import { Button } from './Button';
+import McpOAuthConnections from './McpOAuthConnections';
 
 type Scope =
   | 'maps:read'
@@ -217,13 +218,14 @@ function AccountAgentAccess({ user }: { user: User }) {
         </p>
         <p>
           這裡提供自訂 Bearer 權杖的 MCP 連線，適用於支援自訂 Authorization 標頭的客戶端。目前不是
-          ChatGPT 的 OAuth 連接器。
+          ChatGPT 網頁版的 OAuth 連接方式；後者需要另外完成授權服務設定與帳號連結。
         </p>
         <p>
           權杖等同所選範圍的帳號存取權，請不要貼到公開對話、原始碼或版本庫。Google
           日曆必須先在「日曆」頁連結。
         </p>
       </div>
+      <McpOAuthConnections user={user} />
       {disabled ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/30 p-4">
           <h3 className="font-semibold">Agent 存取尚未啟用</h3>
@@ -268,10 +270,7 @@ function AccountAgentAccess({ user }: { user: User }) {
                 />
               </label>
               <div className="flex gap-2">
-                <Button
-                  variant="secondary"
-                  onClick={() => void copySecret()}
-                >
+                <Button variant="secondary" onClick={() => void copySecret()}>
                   複製權杖
                 </Button>
                 <Button variant="ghost" onClick={() => setSecret('')}>

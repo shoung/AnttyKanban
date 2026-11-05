@@ -10,7 +10,14 @@ import { pathToFileURL, URL } from 'node:url';
 // Do not install a TypeScript loader or replace authentication/storage dependencies.
 const output = process.argv[2];
 const handlers = new Map();
-for (const name of ['calendar', 'calendar-agent', 'agent-tokens', 'mcp']) {
+for (const name of [
+  'calendar',
+  'calendar-agent',
+  'agent-tokens',
+  'mcp',
+  'mcp-oauth-metadata',
+  'mcp-link',
+]) {
   const module = await import(pathToFileURL(path.join(output, 'api', `${name}.js`)).href);
   handlers.set(`/api/${name}`, module.default);
 }
@@ -48,6 +55,8 @@ try {
   await expectResponse('/api/calendar?action=callback', 503);
   await expectResponse('/api/agent-tokens', 503);
   await expectResponse('/api/mcp', 503);
+  await expectResponse('/api/mcp-oauth-metadata', 503);
+  await expectResponse('/api/mcp-link', 503);
 
   // Valid, non-secret configuration reaches the real authentication/origin guards.
   // Missing bearer tokens and disallowed origins must stop before any remote access.
@@ -62,6 +71,7 @@ try {
     });
     await expectResponse(route, 403, { Host: 'untrusted.example' });
   }
+  await expectResponse('/api/mcp-oauth-metadata', 404, { Host: 'native-runtime.example' });
   // Exercise the actual WIF-backed SDK initialization offline as native emitted JS.
   Object.assign(process.env, {
     FIREBASE_PROJECT_ID: 'antboard-2025',
