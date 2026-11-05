@@ -27,6 +27,8 @@ test('OAuth HTTP serves discovery and bounded public token exchange while requir
     assert.deepEqual(body.code_challenge_methods_supported, ['S256']);
     assert.deepEqual(body.token_endpoint_auth_methods_supported, ['none']);
     assert.equal(body.issuer, settings.origin);
+    assert.equal('testUid' in body, false);
+    assert.doesNotMatch(JSON.stringify(body), /alice/);
     assert.equal('registration_endpoint' in body, false);
     assert.equal(
       (await fetch(`${base}/oauth/metadata`, { headers: { Origin: 'https://chatgpt.com' } }))

@@ -9,6 +9,7 @@ export const NOW = 1_800_000_000_000;
 export const settings = { origin: 'https://antty.example', host: 'antty.example' };
 export const env = {
   ANTTY_MCP_FIREBASE_OAUTH_ENABLED: 'true',
+  ANTTY_MCP_FIREBASE_OAUTH_TEST_UID: 'alice',
   ANTTY_MCP_FIREBASE_OAUTH_CLIENTS: JSON.stringify([
     { id: 'chatgpt-personal', name: 'My ChatGPT', redirectUris: ['https://chatgpt.com/callback'] },
   ]),
@@ -49,14 +50,17 @@ export function memoryOAuthRepository(): OAuthRepository {
         .map(([key, row]) => ({ id: key.slice(7), row })),
   };
 }
-export function oauthFixture(repository = memoryOAuthRepository()) {
+export function oauthFixture(repository = memoryOAuthRepository(), uid = 'alice') {
   const state = {
     now: NOW,
     disabled: false,
     cutoff: NOW - 120_000,
     accountFailure: undefined as unknown,
   };
-  const config = getFirebaseOAuthConfig(settings, env)!;
+  const config = getFirebaseOAuthConfig(settings, {
+    ...env,
+    ANTTY_MCP_FIREBASE_OAUTH_TEST_UID: uid,
+  })!;
   const service = createFirebaseOAuthService(config, {
     repository,
     now: () => state.now,
@@ -68,7 +72,7 @@ export function oauthFixture(repository = memoryOAuthRepository()) {
       };
     },
   });
-  const identity = { uid: 'alice', authTime: NOW - 30_000 };
+  const identity = { uid, authTime: NOW - 30_000 };
   const parameters = new URLSearchParams({
     response_type: 'code',
     client_id: 'chatgpt-personal',

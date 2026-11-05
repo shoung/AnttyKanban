@@ -9,7 +9,8 @@
       "feat/google-calendar-view": false,
       "feat/calendar-interactive-ui": false,
       "feat/chatgpt-mcp-oauth": false,
-      "feat/mcp-client-crud": false
+      "feat/mcp-client-crud": false,
+      "fix/legacy-rules-and-mcp-pilot": false
     }
   },
   "rewrites": [

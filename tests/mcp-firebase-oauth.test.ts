@@ -180,7 +180,10 @@ test('Firebase consent produces only a resource-bound scoped MCP token, never a 
   const principal = await f.service.authenticate(result.access_token);
   assert.equal(principal.uid, 'alice');
   assert.deepEqual(principal.scopes, ['maps:read']);
-  assert.equal((await f.service.list('bob')).length, 0);
+  await assert.rejects(
+    f.service.list('bob'),
+    (e: unknown) => (e as { status: number }).status === 403,
+  );
 });
 
 test('authorize rejects broad scopes, ambiguous parameters, unsafe redirects, absent resource and plain PKCE', async () => {
@@ -205,7 +208,10 @@ test('authorize rejects broad scopes, ambiguous parameters, unsafe redirects, ab
 test('consent pins browser and UID, requires recent proof, expires and cannot be repeated', async () => {
   const f = oauthFixture();
   const p = await f.begin();
-  await rejects(f.service.details({ ...f.identity, uid: 'bob' }, p.id, p.browserSecret));
+  await assert.rejects(
+    f.service.details({ ...f.identity, uid: 'bob' }, p.id, p.browserSecret),
+    (e: unknown) => (e as { status: number }).status === 403,
+  );
   await rejects(f.service.decide(f.identity, p.id, 'wrong', true));
   await rejects(
     f.service.decide({ ...f.identity, authTime: NOW - 301_000 }, p.id, p.browserSecret, true),

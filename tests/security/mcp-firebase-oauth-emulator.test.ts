@@ -20,8 +20,7 @@ test('Firebase OAuth real Firestore transactions reject code replay and consent 
     auth: new GoogleAuth({ projectId: 'demo-antty-security', authClient }),
   });
   try {
-    const f = oauthFixture(firestoreOAuthRepository(db));
-    f.identity.uid = `oauth-${randomUUID()}`;
+    const f = oauthFixture(firestoreOAuthRepository(db), `oauth-${randomUUID()}`);
     const { code } = await f.approve();
     const exchanges = await Promise.allSettled([f.exchange(code), f.exchange(code)]);
     assert.equal(exchanges.filter((x) => x.status === 'fulfilled').length, 1);

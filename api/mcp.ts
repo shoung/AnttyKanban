@@ -71,21 +71,29 @@ export function createMcpHandler(
       const settings = dependencies.config();
       assertMcpRequestOrigin(req.headers, settings, false);
       preAuthLimiter.consume(req.socket.remoteAddress ?? 'unknown');
-      // PAT verification never depends on optional OAuth configuration. A failed OAuth token
-      // is never retried as a PAT or a Firebase ID token.
+      // Managed OAuth remains independent of PATs, but an enabled first-party pilot
+      // gates every bearer path. Failed OAuth is never retried as a PAT/Firebase token.
       const authorization = req.headers.authorization;
       const isPat = typeof authorization === 'string' && /^Bearer antty_/i.test(authorization);
+      firebaseOauth = dependencies.firebaseOauth?.config(settings) ?? null;
       if (!isPat) {
-        firebaseOauth = dependencies.firebaseOauth?.config(settings) ?? null;
         if (!firebaseOauth && dependencies.oauth) oauth = dependencies.oauth.config(settings);
       }
       const token = bearerToken(authorization);
-      const principal =
-        firebaseOauth && dependencies.firebaseOauth
+      let principal =
+        !isPat && firebaseOauth && dependencies.firebaseOauth
           ? await dependencies.firebaseOauth.authenticate(token, firebaseOauth)
           : oauth && dependencies.oauth
             ? await dependencies.oauth.authenticate(token, oauth)
             : await dependencies.authenticate(token);
+      if (firebaseOauth) {
+        const scopes = principal.scopes.filter((scope) => firebaseOauth!.scopes.includes(scope));
+        if (principal.uid !== firebaseOauth.testUid || scopes.length === 0)
+          throw Object.assign(new Error('Agent access is not permitted for this pilot'), {
+            status: 403,
+          });
+        principal = { ...principal, scopes };
+      }
       await dependencies.quota(`mcp:${principal.uid}`, 120, 60_000);
       if (req.method !== 'POST') {
         res.setHeader('Allow', 'POST');

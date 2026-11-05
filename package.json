@@ -12,7 +12,7 @@
     "format": "prettier --write .",
     "test": "node --import tsx --test tests/*.test.ts",
     "test:ui": "vitest run",
-    "test:rules": "firebase emulators:exec --config security/firebase.emulators.json --project demo-antty-security --only firestore,storage \"node --import tsx --test tests/security/*.test.ts\"",
+    "test:rules": "firebase emulators:exec --config security/firebase.emulators.json --project demo-antty-security --only firestore,storage \"node --import tsx --test --test-concurrency=1 tests/security/*.test.ts\"",
     "postinstall": "patch-package --error-on-fail --error-on-warn"
   },
   "dependencies": {

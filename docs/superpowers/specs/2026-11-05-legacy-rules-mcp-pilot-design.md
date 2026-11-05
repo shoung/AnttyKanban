@@ -1,0 +1,19 @@
+# Legacy ownership and one-UID MCP pilot
+
+User authorized read-only production investigation plus isolated preparation/tests, never a live rule/data/access change. Base is deployed main 5c3e58b. Production still grants every signed-in Firebase user read/write to `boards/default` and flat `task-images/{fileName}` objects. Owner-scoped paths and server-only denial otherwise exist. Current code reads/writes only `users/{uid}/boards/default`, uploads owner-scoped images, and retains legacy URL rendering; the guarded migration tool is the only current legacy-board reader. Old browser tabs/deployments may still use old paths. No verified owner Firebase UID or restorable backup has been established.
+
+## Decision and limits
+
+Do not remove or migrate legacy records, rotate image download tokens, guess the owner UID, alter cloud IAM or deploy anything. Prepare a pure local rule renderer that adds only exact legacy-path grants for an explicit operator-verified owner UID to the existing deny-by-default drafts. The deployed rule diff must replace the two broad legacy matches, not add an overlapping deny (Rules combine matching allows). Owner legacy read/write is preserved to avoid breaking stale clients; everyone else is denied. Owner-scoped current paths and server-only matches remain identical. The existing draft without legacy matches remains the optional later deny-all stage, after migration/attachment inventory and owner acceptance. Firebase download-token URLs are bearer access and are not revoked by this rule change.
+
+Backups, live identity verification, complete deployed-rule export/diff, cutover, live smoke checks and rollback remain explicit operator approval steps. Prepare a plan that inventories the old board and every referenced attachment, preserves raw/private originals and generations/tokens, validates restore capability, and rolls back only reviewed rule versions without overwriting application data. Do not execute the existing migration even in dry-run: it reads live data and writes private backups, and requires approved Admin identity and owner UID.
+
+## Single-UID first-party OAuth
+
+Require `ANTTY_MCP_FIREBASE_OAUTH_TEST_UID` whenever first-party OAuth is enabled. Empty/invalid configuration is 503, never an unrestricted fallback. The value is server-only and never published in metadata or error text. Check exact immutable UID before consent preview/approval or Firebase account lookups. Check it again for code exchange and every token-authenticated request; changing it blocks previous grants without mutating them. Block connection listing for another UID; keep existing owner/token revocation available so an excluded owner can terminate prior grants.
+
+While this first-party pilot is enabled, the MCP gateway must enforce its UID and scope ceiling for all bearer paths, including PATs, so another account cannot bypass the pilot with a PAT and a same-account PAT cannot widen the read-only ceiling. Managed OAuth remains mutually exclusive, and normal PAT behavior is unchanged while the pilot is off. Grant creation and seven-day cap do not automatically expire the global feature flag; there is no refresh token and one-hour access expiry still requires reconsent. No real UID or credentials are configured in this change.
+
+## Verification
+
+Failing-first unit tests cover absent/invalid UID, exact account binding, before-storage rejection, existing-grant exclusion, metadata privacy, PAT bypass and scope narrowing. A separate demo-only emulator project verifies owner-only legacy reads/writes, foreign/anonymous denial for both legacy resources, unchanged owner-scoped board/map/image behavior, unknown-path denial and private OAuth collection denial. Tests use synthetic identities/data only. Existing full unit/UI/type/lint/build/emulator suites remain required. An independent review checks the security boundary and rule diff. Keep a draft PR with branch auto-deployment disabled.

@@ -7,6 +7,7 @@ import {
   type McpTokenSummary,
 } from '../server/mcpTokens.js';
 import { parseTokenRequest } from '../server/mcpPolicy.js';
+import { getFirebaseOAuthConfig, type FirebaseOAuthConfig } from '../server/mcpFirebaseOAuth.js';
 import {
   assertMcpRequestOrigin,
   consumeMcpQuota,
@@ -29,6 +30,7 @@ interface Dependencies {
   authenticate(req: IncomingMessage): Promise<{ uid: string }>;
   quota(key: string, limit: number, windowMs: number): Promise<void>;
   tokens(): TokenOperations;
+  pilot?(settings: McpConfig): FirebaseOAuthConfig | null;
 }
 const revokeSchema = z.object({ id: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
 export function createAgentTokenHandler(
@@ -37,6 +39,7 @@ export function createAgentTokenHandler(
     authenticate: authenticateRequest,
     quota: consumeMcpQuota,
     tokens: () => createTokenService(firestoreTokenRepository()),
+    pilot: getFirebaseOAuthConfig,
   },
 ) {
   const limiter = new LocalRateLimiter(120, 60_000);
@@ -69,6 +72,16 @@ export function createAgentTokenHandler(
       }
       if (req.method === 'POST') {
         const input = parseTokenRequest(await readBoundedJson(req, 8192));
+        const pilot = dependencies.pilot?.(settings);
+        if (
+          pilot &&
+          (uid !== pilot.testUid ||
+            input.days > 7 ||
+            input.scopes.some((scope) => !pilot.scopes.includes(scope)))
+        )
+          return jsonResponse(res, 403, {
+            error: 'Agent token request exceeds the pilot constraints',
+          });
         await dependencies.quota(`token-issuance:${uid}`, 10, 3_600_000);
         return jsonResponse(res, 201, await dependencies.tokens().issue(uid, input));
       }
