@@ -5,7 +5,8 @@
       "fix/runtime-and-admin-auth": false,
       "fix/server-jose-compatibility": false,
       "chore/wif-readonly-preflight": false,
-      "feat/calendar-agent-grants": false
+      "feat/calendar-agent-grants": false,
+      "feat/google-calendar-view": false
     }
   }
 }
