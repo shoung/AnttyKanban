@@ -1,94 +1,364 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
+import FullCalendar from '@fullcalendar/react';
+import dayGridPlugin from '@fullcalendar/daygrid';
+import timeGridPlugin from '@fullcalendar/timegrid';
+import interactionPlugin, { type EventResizeDoneArg } from '@fullcalendar/interaction';
+import zhTw from '@fullcalendar/core/locales/zh-tw';
+import type { DatesSetArg, EventDropArg, EventInput } from '@fullcalendar/core';
 import { CalendarDays, ExternalLink } from 'lucide-react';
+import type { CalendarEvent, CalendarEventInput, CalendarStatus } from '../server/calendar/core';
+import {
+  draftForEvent,
+  draftForSelection,
+  movedEvent,
+  type EventDraft,
+} from '../services/calendarDates';
 import { Button } from './Button';
 import { AgentCalendarAccess } from './AgentCalendarAccess';
 import { ManualCalendarConnection } from './ManualCalendarConnection';
-import { validateCalendarEmbedUrl } from '../services/calendarEmbed';
+import { CalendarEventEditor } from './CalendarEventEditor';
+import './calendar.css';
 
-const storageKey = (uid: string) => `antty:calendar-embed:${uid}`;
-const storageError = '瀏覽器無法儲存或讀取設定。請檢查網站儲存權限，或直接開啟 Google 日曆。';
-const invalidUrlError = '請貼上有效的 Google 日曆官方嵌入網址，不要貼上 HTML、登入網址或憑證。';
-function readEmbed(uid: string): { url: string; error: string } {
-  try {
-    const saved = window.localStorage.getItem(storageKey(uid));
-    if (!saved) return { url: '', error: '' };
-    const validated = validateCalendarEmbedUrl(saved);
-    return validated.ok ? { url: validated.url, error: '' } : { url: '', error: invalidUrlError };
-  } catch {
-    return { url: '', error: storageError };
-  }
+const plugins = [dayGridPlugin, timeGridPlugin, interactionPlugin];
+const messages: Record<string, string> = {
+  EVENT_CHANGED: '活動已變更，請重新整理後再編輯，避免覆蓋其他修改。',
+  EVENT_NOT_FOUND: '活動已刪除或無法存取，請重新整理。',
+  PERSONAL_EVENTS_ONLY: '此活動目前僅供檢視，請重新整理或到 Google 日曆處理。',
+  RATE_LIMITED: 'Google 暫時限制請求，請稍候再重新整理。',
+  GOOGLE_PERMISSION_DENIED: 'Google 拒絕存取，請檢查個人日曆授權後重新整理。',
+  RECONNECT_REQUIRED: '個人日曆授權已失效，請重新連接。',
+  AUTHENTICATION_REQUIRED: '請重新登入 Antty 後再連接日曆。',
+  CALENDAR_NOT_CONNECTED: '個人日曆已中斷連線，請重新連接。',
+  CALENDAR_GRANT_MISMATCH: '日曆授權設定已變更，請由管理員檢查。',
+  CALENDAR_NOT_CONFIGURED: '個人日曆服務尚未設定，請由管理員檢查。',
+};
+interface Range {
+  timeMin: string;
+  timeMax: string;
 }
-
-/** Remount before displaying a different Firebase account's browser-local settings. */
+interface Page {
+  events: CalendarEvent[];
+  nextPageToken?: string;
+}
+interface Editor {
+  draft: EventDraft;
+  event?: CalendarEvent;
+}
+/** Account changes unmount all in-memory events, drafts, and pending requests. */
 export function CalendarWorkspace({ user }: { user: User }) {
   return <CalendarAccountWorkspace key={user.uid} user={user} />;
 }
 function CalendarAccountWorkspace({ user }: { user: User }) {
-  const [initial] = useState(() => readEmbed(user.uid));
-  const [embedUrl, setEmbedUrl] = useState(initial.url);
-  const [draft, setDraft] = useState(initial.url);
-  const [error, setError] = useState(initial.error);
+  const [status, setStatus] = useState<CalendarStatus | null>(null);
+  const [range, setRange] = useState<Range | null>(null);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [loadedUser, setLoadedUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [writing, setWriting] = useState(false);
+  const [needsRefresh, setNeedsRefresh] = useState(false);
+  const [reload, setReload] = useState(0);
+  const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [editor, setEditor] = useState<Editor | null>(null);
   const [connectionsOpen, setConnectionsOpen] = useState(() => {
     const params = new URL(window.location.href).searchParams;
     return params.has('calendar') || params.has('calendarAgent');
   });
+  const requests = useRef(new Set<AbortController>());
+  const generation = useRef(0);
+  const accountGeneration = useRef(0);
+  const writeLock = useRef(false);
+  const readyRef = useRef(false);
+  const invalidateAccount = useCallback(() => {
+    accountGeneration.current++;
+  }, []);
+  const ready =
+    loadedUser === user && !loading && !writing && !needsRefresh && status?.status === 'connected';
 
-  function save(event: React.FormEvent) {
-    event.preventDefault();
+  const request = useCallback(
+    async <T,>(
+      action: string,
+      controller: AbortController,
+      method = 'GET',
+      body?: unknown,
+    ): Promise<T> => {
+      const check = () => {
+        if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      };
+      const token = await user.getIdToken();
+      check();
+      const response = await fetch(`/api/calendar?action=${action}`, {
+        method,
+        mode: 'same-origin',
+        credentials: 'same-origin',
+        redirect: 'error',
+        cache: 'no-store',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        signal: controller.signal,
+      });
+      check();
+      const data = await response.json();
+      check();
+      if (!response.ok)
+        throw new Error(typeof data?.error === 'string' ? data.error : 'REQUEST_FAILED');
+      return data as T;
+    },
+    [user],
+  );
+
+  useEffect(() => {
+    const active = requests.current;
+    invalidateAccount();
+    writeLock.current = false;
+    setWriting(false);
+    return () => {
+      invalidateAccount();
+      active.forEach((c) => c.abort());
+    };
+  }, [request, invalidateAccount]);
+
+  useEffect(() => {
+    // A range or refresh may arrive while Google is still processing a write.
+    // Keep that write locked; success schedules a fresh read, failure requires explicit refresh.
+    if (writeLock.current) return;
+    const current = ++generation.current;
+    const controller = new AbortController();
+    requests.current.add(controller);
+    readyRef.current = false;
+    setLoading(true);
+    setLoadedUser(null);
+    setEvents([]);
+    setEditor(null);
+    setError('');
+    void (async () => {
+      const next = await request<CalendarStatus>('status', controller);
+      if (generation.current !== current) return;
+      setStatus(next);
+      if (next.status !== 'connected') {
+        setConnectionsOpen(true);
+        return;
+      }
+      if (!range) return;
+      const accumulated = new Map<string, CalendarEvent>();
+      const tokens = new Set<string>();
+      let pageToken: string | undefined;
+      do {
+        const query = new URLSearchParams({ ...range, ...(pageToken ? { pageToken } : {}) });
+        const page = await request<Page>(`events&${query}`, controller);
+        if (generation.current !== current) return;
+        if (!Array.isArray(page.events)) throw new Error('REQUEST_FAILED');
+        page.events.forEach((event) => accumulated.set(event.id, event));
+        pageToken = page.nextPageToken;
+        if (pageToken) {
+          if (tokens.has(pageToken) || tokens.size >= 100) throw new Error('INCOMPLETE_CALENDAR');
+          tokens.add(pageToken);
+        }
+      } while (pageToken);
+      setEvents([...accumulated.values()]);
+      setLoadedUser(user);
+      setNeedsRefresh(false);
+      readyRef.current = true;
+    })()
+      .catch((failure) => {
+        if (controller.signal.aborted || generation.current !== current) return;
+        const code = failure instanceof Error ? failure.message : '';
+        setError(messages[code] ?? '無法完整讀取日曆，請重新整理後再操作。');
+        setNeedsRefresh(true);
+        if (
+          ['RECONNECT_REQUIRED', 'AUTHENTICATION_REQUIRED', 'CALENDAR_NOT_CONNECTED'].includes(code)
+        ) {
+          setStatus(null);
+          setConnectionsOpen(true);
+        }
+      })
+      .finally(() => {
+        requests.current.delete(controller);
+        if (generation.current === current) setLoading(false);
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [request, range, reload, user]);
+
+  const datesSet = useCallback((info: DatesSetArg) => {
+    const next = { timeMin: info.startStr, timeMax: info.endStr };
+    setRange((previous) => {
+      if (previous?.timeMin === next.timeMin && previous.timeMax === next.timeMax) return previous;
+      readyRef.current = false;
+      return next;
+    });
+  }, []);
+
+  const onStatusChange = useCallback((next: CalendarStatus | null) => {
+    if (writeLock.current) return;
+    accountGeneration.current++;
+    generation.current++;
+    requests.current.forEach((c) => c.abort());
+    readyRef.current = false;
+    writeLock.current = false;
+    setWriting(false);
+    setLoading(false);
+    setStatus(next);
+    setEvents([]);
+    setEditor(null);
+    setLoadedUser(null);
+    if (next) setReload((value) => value + 1);
+  }, []);
+
+  async function mutate(
+    method: 'POST' | 'PATCH' | 'DELETE',
+    input?: CalendarEventInput,
+    original?: CalendarEvent,
+    revert?: () => void,
+  ) {
+    if (
+      !ready ||
+      !readyRef.current ||
+      writeLock.current ||
+      (original && (original.readOnly || !original.etag))
+    ) {
+      revert?.();
+      return;
+    }
+    writeLock.current = true;
+    setWriting(true);
+    setError('');
     setNotice('');
-    const validated = validateCalendarEmbedUrl(draft);
-    if (!validated.ok) {
-      setError(invalidUrlError);
+    const current = accountGeneration.current;
+    const controller = new AbortController();
+    requests.current.add(controller);
+    try {
+      const body =
+        method === 'POST'
+          ? input
+          : {
+              eventId: original!.id,
+              etag: original!.etag,
+              ...(method === 'PATCH' ? { event: input } : {}),
+            };
+      const result = await request<CalendarEvent>('events', controller, method, body);
+      if (current !== accountGeneration.current) return;
+      setEvents((previous) =>
+        method === 'DELETE'
+          ? previous.filter((e) => e.id !== original!.id)
+          : [...previous.filter((e) => e.id !== result.id), result],
+      );
+      setEditor(null);
+      setNotice(method === 'DELETE' ? '活動已刪除。' : '活動已儲存至 Google 日曆。');
+      setLoadedUser(null);
+      setReload((value) => value + 1);
+    } catch (failure) {
+      revert?.();
+      if (controller.signal.aborted || current !== accountGeneration.current) return;
+      readyRef.current = false;
+      setNeedsRefresh(true);
+      const code = failure instanceof Error ? failure.message : '';
+      setError(
+        messages[code] ??
+          '無法確認操作結果；請先重新整理並檢查活動，再決定是否重做，避免重複建立。',
+      );
+      if (
+        [
+          'RECONNECT_REQUIRED',
+          'CALENDAR_NOT_CONNECTED',
+          'AUTHENTICATION_REQUIRED',
+          'CALENDAR_GRANT_MISMATCH',
+        ].includes(code)
+      ) {
+        setStatus(null);
+        setEvents([]);
+        setEditor(null);
+        setConnectionsOpen(true);
+      }
+    } finally {
+      requests.current.delete(controller);
+      if (current === accountGeneration.current) {
+        writeLock.current = false;
+        setWriting(false);
+      }
+    }
+  }
+
+  function move(info: EventDropArg | EventResizeDoneArg) {
+    const original = events.find((e) => e.id === info.event.id);
+    if (!original || !ready || !info.event.startStr || !info.event.endStr) {
+      info.revert();
       return;
     }
     try {
-      window.localStorage.setItem(storageKey(user.uid), validated.url);
-      setEmbedUrl(validated.url);
-      setDraft(validated.url);
-      setError('');
-      setNotice('已儲存此帳號在這個瀏覽器的顯示設定。這不代表 Google 已登入或日曆已載入。');
-    } catch {
-      setError(storageError);
-    }
-  }
-  function clear() {
-    // Hide immediately even if persistent storage is unavailable.
-    setEmbedUrl('');
-    setDraft('');
-    setNotice('');
-    try {
-      window.localStorage.removeItem(storageKey(user.uid));
-      setError('');
-      setNotice('已清除此帳號在這個瀏覽器的日曆顯示設定。');
-    } catch {
-      setError(
-        '已停止顯示，但瀏覽器未能清除儲存的網址；重新載入後可能再次出現。請清除本站儲存資料。',
+      void mutate(
+        'PATCH',
+        movedEvent(original, info.event.startStr, info.event.endStr, info.event.allDay),
+        original,
+        info.revert,
       );
+    } catch {
+      info.revert();
+      setError('無法使用此起訖時間，請開啟活動編輯。');
     }
   }
-  const linkClass =
-    'inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-blue-700 dark:border-slate-700 dark:bg-slate-900 dark:text-blue-300';
+
+  const calendarEvents = useMemo<EventInput[]>(
+    () =>
+      events.map((event) => ({
+        id: event.id,
+        title: event.summary,
+        start: event.start.date ?? event.start.dateTime,
+        end: event.end.date ?? event.end.dateTime,
+        allDay: Boolean(event.start.date),
+        editable: ready && !event.readOnly && Boolean(event.etag),
+        classNames: event.readOnly || !event.etag ? ['antty-event-readonly'] : [],
+      })),
+    [events, ready],
+  );
+
+  function newEvent() {
+    if (!ready || writeLock.current) return;
+    const start = new Date();
+    start.setSeconds(0, 0);
+    setEditor({
+      draft: draftForSelection(
+        start.toISOString(),
+        new Date(start.getTime() + 3_600_000).toISOString(),
+        false,
+      ),
+    });
+  }
   return (
     <section
-      className="h-full overflow-y-auto bg-slate-50 p-4 dark:bg-slate-950 md:p-6"
+      className="antty-calendar h-full overflow-y-auto bg-slate-50 p-4 dark:bg-slate-950 md:p-6"
       aria-label="Google 日曆工作區"
     >
-      <div className="w-full space-y-4">
+      <div className="space-y-4">
         <header className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900 dark:text-white">
               <CalendarDays size={24} />
-              Google 日曆
+              我的日曆
             </h1>
             <p className="mt-2 text-sm text-slate-500">
-              使用 Google 官方日曆檢視，新增與編輯活動請到 Google 日曆。
+              主要日曆 · 瀏覽器時區：{Intl.DateTimeFormat().resolvedOptions().timeZone}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Button disabled={!ready} onClick={newEvent}>
+              新增活動
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={loading || writing}
+              onClick={() => {
+                readyRef.current = false;
+                setNotice('');
+                setReload((n) => n + 1);
+              }}
+            >
+              重新整理
+            </Button>
             <a
-              className={linkClass}
+              className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm text-blue-700 dark:text-blue-300"
               href="https://calendar.google.com/"
               target="_blank"
               rel="noopener noreferrer"
@@ -96,46 +366,12 @@ function CalendarAccountWorkspace({ user }: { user: User }) {
               開啟 Google 日曆
               <ExternalLink size={16} />
             </a>
-            <a
-              className={linkClass}
-              href="https://calendar.google.com/calendar/r/eventedit?action=TEMPLATE"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              在 Google 新增活動
-              <ExternalLink size={16} />
-            </a>
           </div>
         </header>
-        <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-          Google 瀏覽器登入、目前選用的帳號與 Cookie，和 Antty 的登入及日曆 OAuth
-          授權各自獨立。私人日曆不需要設為公開；能否顯示取決於 Google
-          的存取權限與瀏覽器設定。封鎖第三方 Cookie
-          可能使嵌入畫面無法登入。若畫面空白或要求登入，請按「開啟 Google
-          日曆」。新增活動連結只開啟草稿，不會自動建立活動。
+        <p className="text-sm text-slate-600 dark:text-slate-300">
+          點選日期或拖曳選取時段建立活動；點選活動編輯，也可拖曳移動或調整長度。重複、受邀及特殊活動目前僅供檢視。Google
+          的變更請按「重新整理」讀取。
         </p>
-        {embedUrl ? (
-          <iframe
-            key={embedUrl}
-            title="Google 官方日曆"
-            src={embedUrl}
-            referrerPolicy="no-referrer"
-            sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-            className="block w-full rounded-2xl border border-slate-200 bg-white dark:border-slate-800"
-            style={{ height: '70vh', minHeight: '480px' }}
-          />
-        ) : (
-          <div className="flex min-h-[50vh] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center dark:border-slate-700 dark:bg-slate-900">
-            <CalendarDays className="mb-4 text-blue-500" size={40} />
-            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
-              尚未設定日曆檢視
-            </h2>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500">
-              在下方「日曆顯示設定」貼上 Google 官方嵌入網址，或直接開啟 Google 日曆。此檢視不需要
-              Antty 的日曆 API 連線。
-            </p>
-          </div>
-        )}
         {error && (
           <p
             role="alert"
@@ -152,55 +388,108 @@ function CalendarAccountWorkspace({ user }: { user: User }) {
             {notice}
           </p>
         )}
-        <details className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-          <summary className="cursor-pointer font-semibold text-slate-900 dark:text-white">
-            日曆顯示設定
-          </summary>
-          <form onSubmit={save} className="mt-4 space-y-3">
-            <p className="text-sm leading-6 text-slate-500">
-              在 Google 日曆的「設定 → 我的日曆設定 → 整合日曆 → 嵌入程式碼」取得 iframe 的 src
-              網址。只貼上 https://calendar.google.com/calendar/embed 開頭的網址，不要貼整段
-              HTML。請勿貼上私人 iCal 網址、OAuth token 或密碼。
+        {editor && (
+          <CalendarEventEditor
+            key={editor.event?.id ?? `${editor.draft.start}/${editor.draft.end}`}
+            initial={editor.draft}
+            event={editor.event}
+            busy={writing}
+            blocked={!ready}
+            onClose={() => setEditor(null)}
+            onSave={(input) => void mutate(editor.event ? 'PATCH' : 'POST', input, editor.event)}
+            onDelete={() => {
+              if (
+                ready &&
+                !writeLock.current &&
+                window.confirm('確定要刪除此活動？此操作會同步到 Google 日曆。')
+              )
+                void mutate('DELETE', undefined, editor.event);
+            }}
+          />
+        )}
+        {status?.status === 'connected' ? (
+          <div
+            className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900 md:p-5"
+            aria-busy={loading || writing}
+            inert={writing}
+          >
+            {loading && (
+              <p role="status" className="mb-3 text-sm text-slate-500">
+                正在讀取活動…
+              </p>
+            )}
+            {!loading && !error && events.length === 0 && (
+              <p role="status" className="mb-3 text-sm text-slate-500">
+                這段期間沒有活動。
+              </p>
+            )}
+            <FullCalendar
+              plugins={plugins}
+              locale={zhTw}
+              timeZone="local"
+              initialView="dayGridMonth"
+              height="auto"
+              headerToolbar={{
+                left: 'prev,next today',
+                center: 'title',
+                right: 'dayGridMonth,timeGridWeek,timeGridDay',
+              }}
+              buttonText={{ today: '今天', month: '月', week: '週', day: '日' }}
+              events={calendarEvents}
+              datesSet={datesSet}
+              editable={ready}
+              selectable={ready}
+              selectMirror
+              nowIndicator
+              dayMaxEvents
+              eventResizableFromStart
+              allDayMaintainDuration
+              eventDurationEditable={ready}
+              eventStartEditable={ready}
+              eventDrop={move}
+              eventResize={move}
+              eventClick={(info) => {
+                if (loading || writing) return;
+                const event = events.find((e) => e.id === info.event.id);
+                if (event) setEditor({ event, draft: draftForEvent(event) });
+              }}
+              select={(info) => {
+                if (ready && !writeLock.current)
+                  setEditor({ draft: draftForSelection(info.startStr, info.endStr, info.allDay) });
+              }}
+              dateClick={(info) => {
+                if (!ready || writeLock.current) return;
+                const end = info.allDay
+                  ? new Date(Date.parse(`${info.dateStr}T00:00:00Z`) + 86_400_000)
+                      .toISOString()
+                      .slice(0, 10)
+                  : new Date(info.date.getTime() + 3_600_000).toISOString();
+                setEditor({ draft: draftForSelection(info.dateStr, end, info.allDay) });
+              }}
+            />
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center dark:border-slate-700 dark:bg-slate-900">
+            <h2 className="text-lg font-semibold dark:text-white">
+              {loading ? '正在檢查個人日曆連線…' : '請先連接個人日曆'}
+            </h2>
+            <p className="mt-2 text-sm text-slate-500">
+              使用下方個人 API 連線設定授權。AI 日曆權限需另行連接。
             </p>
-            <p className="text-sm leading-6 text-slate-500">
-              網址只儲存在此瀏覽器，依目前 Antty 帳號分開，不會上傳至 Antty 伺服器。嵌入時瀏覽器會向
-              Google
-              請求該網址。這不是共用裝置上的保密機制：同一瀏覽器的其他使用者可能讀取儲存資料，而且
-              Google 可能仍登入另一個帳號。共用瀏覽器使用完畢後請清除設定，並檢查 Google 登入帳號。
-            </p>
-            <label className="block text-sm text-slate-700 dark:text-slate-200">
-              Google 日曆嵌入網址
-              <input
-                type="text"
-                autoComplete="off"
-                spellCheck={false}
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-              />
-            </label>
-            <div className="flex flex-wrap gap-2">
-              <Button type="submit">儲存顯示設定</Button>
-              <Button type="button" variant="secondary" onClick={clear}>
-                清除顯示設定
-              </Button>
-            </div>
-          </form>
-        </details>
+          </div>
+        )}
         <details
+          inert={writing}
           open={connectionsOpen}
-          onToggle={(event) => setConnectionsOpen(event.currentTarget.open)}
+          onToggle={(e) => setConnectionsOpen(e.currentTarget.open)}
           className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900"
         >
           <summary className="cursor-pointer font-semibold text-slate-900 dark:text-white">
-            日曆連線設定
+            連線設定
           </summary>
-          <p className="my-4 text-sm text-slate-500">
-            以下 API 授權與上方 Google 嵌入檢視分開管理，不會替嵌入畫面登入 Google。
-          </p>
           {connectionsOpen && (
-            <div className="space-y-4">
-              <ManualCalendarConnection user={user} />
+            <div className="mt-4 space-y-4">
+              <ManualCalendarConnection user={user} onStatusChange={onStatusChange} />
               <AgentCalendarAccess user={user} />
             </div>
           )}

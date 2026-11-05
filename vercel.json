@@ -6,7 +6,8 @@
       "fix/server-jose-compatibility": false,
       "chore/wif-readonly-preflight": false,
       "feat/calendar-agent-grants": false,
-      "feat/google-calendar-view": false
+      "feat/google-calendar-view": false,
+      "feat/calendar-interactive-ui": false
     }
   }
 }

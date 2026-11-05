@@ -321,6 +321,7 @@ test('invited, recurring and foreign-organizer events never send a mutation', as
     { recurrence: ['RRULE:FREQ=WEEKLY'] },
     { organizer: { self: false } },
     { eventType: 'outOfOffice' },
+    { locked: true },
   ]) {
     const f = fixture();
     await f.connect();
