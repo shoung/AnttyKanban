@@ -14,7 +14,7 @@ const messages: Record<string, string> = {
 };
 interface Props {
   user: User;
-  onStatusChange?: (status: CalendarStatus | null) => void;
+  onStatusChange?: (status: CalendarStatus | null, checking?: boolean) => void;
 }
 export function ManualCalendarConnection({ user, onStatusChange }: Props) {
   return <Connection key={user.uid} user={user} onStatusChange={onStatusChange} />;
@@ -28,7 +28,7 @@ function Connection({ user, onStatusChange }: Props) {
   const generation = useRef(0);
   const locked = useRef(true);
   useEffect(() => {
-    onStatusChange?.(busy ? null : status);
+    onStatusChange?.(status, busy);
   }, [busy, status, onStatusChange]);
   const request = useCallback(
     async <T,>(action: string, body?: unknown): Promise<T> => {
@@ -85,7 +85,10 @@ function Connection({ user, onStatusChange }: Props) {
     }
     load()
       .catch(() => {
-        if (generation.current === current) setError('目前無法讀取人工 API 連線狀態。');
+        if (generation.current === current) {
+          setStatus(null);
+          setError('目前無法讀取人工 API 連線狀態。');
+        }
       })
       .finally(() => {
         if (generation.current === current) {
@@ -113,6 +116,7 @@ function Connection({ user, onStatusChange }: Props) {
         !(failure instanceof Error && failure.name === 'AbortError')
       ) {
         const code = failure instanceof Error ? failure.message : '';
+        setStatus(null);
         setError(messages[code] ?? '人工 API 連線操作未完成，請稍後重試。');
         if (code === 'CALENDAR_GRANT_MISMATCH')
           setStatus({ configured: true, status: 'configuration_changed', calendar: 'primary' });

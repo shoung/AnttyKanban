@@ -50,7 +50,14 @@ export function CalendarWorkspace({ user }: { user: User }) {
   return <CalendarAccountWorkspace key={user.uid} user={user} />;
 }
 function CalendarAccountWorkspace({ user }: { user: User }) {
-  const [status, setStatus] = useState<CalendarStatus | null>(null);
+  const [status, setStatusState] = useState<CalendarStatus | null>(null);
+  const knownStatus = useRef<CalendarStatus | null>(null);
+  const setStatus = useCallback((next: CalendarStatus | null) => {
+    knownStatus.current = next;
+    setStatusState(next);
+  }, []);
+  const [connectionChecking, setConnectionChecking] = useState(false);
+  const [connectionUncertain, setConnectionUncertain] = useState(false);
   const [range, setRange] = useState<Range | null>(null);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loadedUser, setLoadedUser] = useState<User | null>(null);
@@ -68,13 +75,20 @@ function CalendarAccountWorkspace({ user }: { user: User }) {
   const requests = useRef(new Set<AbortController>());
   const generation = useRef(0);
   const accountGeneration = useRef(0);
+  const connectionGeneration = useRef(0);
   const writeLock = useRef(false);
   const readyRef = useRef(false);
   const invalidateAccount = useCallback(() => {
     accountGeneration.current++;
   }, []);
   const ready =
-    loadedUser === user && !loading && !writing && !needsRefresh && status?.status === 'connected';
+    loadedUser === user &&
+    !loading &&
+    !writing &&
+    !needsRefresh &&
+    !connectionChecking &&
+    !connectionUncertain &&
+    status?.status === 'connected';
 
   const request = useCallback(
     async <T,>(
@@ -113,6 +127,9 @@ function CalendarAccountWorkspace({ user }: { user: User }) {
     invalidateAccount();
     writeLock.current = false;
     setWriting(false);
+    setEditor(null);
+    setConnectionChecking(false);
+    setConnectionUncertain(false);
     return () => {
       invalidateAccount();
       active.forEach((c) => c.abort());
@@ -124,13 +141,13 @@ function CalendarAccountWorkspace({ user }: { user: User }) {
     // Keep that write locked; success schedules a fresh read, failure requires explicit refresh.
     if (writeLock.current) return;
     const current = ++generation.current;
+    const connectionVersion = connectionGeneration.current;
     const controller = new AbortController();
     requests.current.add(controller);
     readyRef.current = false;
     setLoading(true);
     setLoadedUser(null);
     setEvents([]);
-    setEditor(null);
     setError('');
     void (async () => {
       const next = await request<CalendarStatus>('status', controller);
@@ -159,6 +176,7 @@ function CalendarAccountWorkspace({ user }: { user: User }) {
       setEvents([...accumulated.values()]);
       setLoadedUser(user);
       setNeedsRefresh(false);
+      if (connectionVersion === connectionGeneration.current) setConnectionUncertain(false);
       readyRef.current = true;
     })()
       .catch((failure) => {
@@ -180,7 +198,7 @@ function CalendarAccountWorkspace({ user }: { user: User }) {
     return () => {
       controller.abort();
     };
-  }, [request, range, reload, user]);
+  }, [request, range, reload, user, setStatus]);
 
   const datesSet = useCallback((info: DatesSetArg) => {
     const next = { timeMin: info.startStr, timeMax: info.endStr };
@@ -191,21 +209,39 @@ function CalendarAccountWorkspace({ user }: { user: User }) {
     });
   }, []);
 
-  const onStatusChange = useCallback((next: CalendarStatus | null) => {
-    if (writeLock.current) return;
-    accountGeneration.current++;
-    generation.current++;
-    requests.current.forEach((c) => c.abort());
-    readyRef.current = false;
-    writeLock.current = false;
-    setWriting(false);
-    setLoading(false);
-    setStatus(next);
-    setEvents([]);
-    setEditor(null);
-    setLoadedUser(null);
-    if (next) setReload((value) => value + 1);
-  }, []);
+  const onStatusChange = useCallback(
+    (next: CalendarStatus | null, checking = false) => {
+      if (writeLock.current) return;
+      connectionGeneration.current++;
+      setConnectionChecking(checking);
+      if (checking) {
+        readyRef.current = false;
+        return;
+      }
+      setConnectionUncertain(!next);
+      if (!next) {
+        readyRef.current = false;
+        return;
+      }
+      // A readonly status check is not a new grant or a reason to discard the UI.
+      if (next.status === 'connected' && knownStatus.current?.status === 'connected') {
+        readyRef.current = true;
+        return;
+      }
+      accountGeneration.current++;
+      generation.current++;
+      requests.current.forEach((c) => c.abort());
+      readyRef.current = false;
+      writeLock.current = false;
+      setWriting(false);
+      setLoading(false);
+      setStatus(next);
+      setEvents([]);
+      setLoadedUser(null);
+      if (next) setReload((value) => value + 1);
+    },
+    [setStatus],
+  );
 
   async function mutate(
     method: 'POST' | 'PATCH' | 'DELETE',
@@ -352,6 +388,7 @@ function CalendarAccountWorkspace({ user }: { user: User }) {
               onClick={() => {
                 readyRef.current = false;
                 setNotice('');
+                if (needsRefresh) setEditor(null);
                 setReload((n) => n + 1);
               }}
             >
@@ -407,8 +444,9 @@ function CalendarAccountWorkspace({ user }: { user: User }) {
             }}
           />
         )}
-        {status?.status === 'connected' ? (
+        {(status?.status === 'connected' || range !== null) && (
           <div
+            hidden={status?.status !== 'connected'}
             className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900 md:p-5"
             aria-busy={loading || writing}
             inert={writing}
@@ -468,7 +506,8 @@ function CalendarAccountWorkspace({ user }: { user: User }) {
               }}
             />
           </div>
-        ) : (
+        )}
+        {status?.status !== 'connected' && (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center dark:border-slate-700 dark:bg-slate-900">
             <h2 className="text-lg font-semibold dark:text-white">
               {loading ? '正在檢查個人日曆連線…' : '請先連接個人日曆'}
@@ -481,7 +520,14 @@ function CalendarAccountWorkspace({ user }: { user: User }) {
         <details
           inert={writing}
           open={connectionsOpen}
-          onToggle={(e) => setConnectionsOpen(e.currentTarget.open)}
+          onToggle={(e) => {
+            setConnectionsOpen(e.currentTarget.open);
+            if (!e.currentTarget.open && connectionChecking) {
+              connectionGeneration.current++;
+              setConnectionChecking(false);
+              setConnectionUncertain(true);
+            }
+          }}
           className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900"
         >
           <summary className="cursor-pointer font-semibold text-slate-900 dark:text-white">

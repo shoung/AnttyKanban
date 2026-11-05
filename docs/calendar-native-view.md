@@ -53,7 +53,8 @@ A synchronous write lock prevents double submissions. A failed/uncertain mutatio
 or ETag conflict blocks further writes until a complete successful refresh. Drag
 and resize failures revert immediately. Mutations are never automatically retried;
 after an uncertain create, refresh and inspect the calendar before creating again.
-Refresh closes the old draft. These are client-session safeguards, not server-side
+Explicit refresh after a failed/uncertain mutation closes the old draft; ordinary
+status checks and reads preserve it. These are client-session safeguards, not server-side
 idempotency across browsers or tabs. Provider errors use fixed public messages.
 
 While a write is pending, the calendar and connection settings are inert. Reads
@@ -95,8 +96,14 @@ Google configuration, credential, scope expansion, grant or real event is change
 Production OAuth longevity, the independent AI workflow and authenticated real
 Google read/write testing remain separate activation tasks requiring approval.
 
-Known UX limitation: opening or refreshing connection settings can reset the
-calendar to today's month and close an unsaved editor while status is rechecked.
+Connection status checks preserve the current calendar instance, selected date,
+view and unsaved editor. Checking or failed checks disable writes without clearing
+input. A confirmed disconnect clears loaded events and hides the calendar, but
+keeps this Firebase account's draft and view in memory for reconnection. A reconnect
+loads fresh event data; an existing editor retains its original ETag, so later
+provider changes still cause a conflict rather than an overwrite. Account changes
+clear these in-memory drafts. Closing an in-flight check cannot leave a stuck
+checking state; a fresh workspace read or successful recheck restores access.
 
 ## References
 

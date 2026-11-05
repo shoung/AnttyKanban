@@ -8,7 +8,7 @@ import { CalendarWorkspace } from '../components/CalendarWorkspace';
 
 const state = vi.hoisted(() => ({
   props: {} as CalendarOptions,
-  onStatus: undefined as undefined | ((s: CalendarStatus | null) => void),
+  onStatus: undefined as undefined | ((s: CalendarStatus | null, checking?: boolean) => void),
 }));
 vi.mock('@fullcalendar/react', () => ({
   default: function MockCalendar(props: CalendarOptions) {
@@ -37,7 +37,7 @@ vi.mock('../components/ManualCalendarConnection', () => ({
   ManualCalendarConnection: ({
     onStatusChange,
   }: {
-    onStatusChange?: (s: CalendarStatus | null) => void;
+    onStatusChange?: (s: CalendarStatus | null, checking?: boolean) => void;
   }) => {
     state.onStatus = onStatusChange;
     return <div>Human connection controls</div>;
@@ -299,7 +299,7 @@ test('late previous-account event response never appears after account switch', 
   expect(screen.queryByText(event.summary)).toBeNull();
 });
 
-test('disconnect status immediately clears event/editor state and disables calendar access', async () => {
+test('an unknown connection status preserves the unsaved editor but disables writes', async () => {
   backend();
   render(<CalendarWorkspace user={user} />);
   await ready();
@@ -309,8 +309,45 @@ test('disconnect status immediately clears event/editor state and disables calen
   fireEvent(details, new Event('toggle'));
   await waitFor(() => expect(state.onStatus).toBeTypeOf('function'));
   await act(async () => state.onStatus?.(null));
-  expect(screen.queryByText(event.summary)).toBeNull();
-  expect(screen.queryByLabelText('活動名稱')).toBeNull();
+  expect(screen.queryByText(event.summary)).not.toBeNull();
+  expect((screen.getByLabelText('活動名稱') as HTMLInputElement).value).toBe(event.summary);
+  expect(
+    (screen.getByRole('button', { name: '儲存活動' }) as HTMLButtonElement).matches(':disabled'),
+  ).toBe(true);
+});
+
+test('an older list response cannot clear a newer failed connection check', async () => {
+  const { calls, fetcher } = backend();
+  render(<CalendarWorkspace user={user} />);
+  await ready();
+  openNew();
+  const details = screen.getByText('連線設定').closest('details')!;
+  details.open = true;
+  fireEvent(details, new Event('toggle'));
+  await waitFor(() => expect(state.onStatus).toBeTypeOf('function'));
+  let finish!: (r: Response) => void;
+  fetcher.mockResolvedValueOnce(reply(connected)).mockImplementationOnce(
+    () =>
+      new Promise((r) => {
+        finish = r;
+      }),
+  );
+  fireEvent.click(screen.getByRole('button', { name: '重新整理' }));
+  await waitFor(() => expect(finish).toBeTypeOf('function'));
+  await act(async () => {
+    state.onStatus?.(null, true);
+    state.onStatus?.(null, false);
+  });
+  await act(async () => finish(reply({ events: [event] })));
+  expect(
+    (screen.getByRole('button', { name: '儲存活動' }) as HTMLButtonElement).matches(':disabled'),
+  ).toBe(true);
+  expect((screen.getByLabelText('活動名稱') as HTMLInputElement).value).toBe('New event');
+  expect(writes(calls)).toHaveLength(0);
+  await act(async () => state.onStatus?.(connected as CalendarStatus, false));
+  expect(
+    (screen.getByRole('button', { name: '儲存活動' }) as HTMLButtonElement).matches(':disabled'),
+  ).toBe(false);
 });
 
 test('opening a different event replaces the previous editor draft', async () => {
