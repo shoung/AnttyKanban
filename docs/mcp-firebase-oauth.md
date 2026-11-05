@@ -8,6 +8,12 @@ Firebase ID tokens are intended for the Firebase project: their `aud` is the pro
 
 ChatGPT supports predefined OAuth clients, so this implementation does not need DCR or CIMD. It publishes discovery, requires authorization code + S256 and resource indicators, and checks every MCP bearer against the specific resource/account/scope grant. Auth0 was an optional managed implementation of this layer, not a protocol requirement. [OpenAI authentication](https://developers.openai.com/plugins/build/auth), [MCP authorization](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization).
 
+## Follow-up pilot boundary (prepared, not deployed)
+
+Before enabling the first-party trial, this branch now requires server-only `ANTTY_MCP_FIREBASE_OAUTH_TEST_UID` with the explicitly verified test UID. Missing/invalid UID fails closed. Consent, exchange, bearer use and connection listing exclude other UIDs; owner/token revocation remains available. While the pilot is enabled, the MCP gateway applies the same UID and scope ceiling to PATs too, and new PAT issuance rejects other UIDs, wider scopes or more than seven days. With the pilot off, existing PAT behavior is unchanged.
+
+Production still has permissive legacy board/image matches and this safety preparation has not been deployed. Follow [legacy access cutover and backup plan](legacy-access-cutover.md) before creating the test identity or activating MCP. No actual owner/test UID is inferred or configured. Add `ANTTY_MCP_FIREBASE_OAUTH_TEST_UID=<verified test UID>` to the activation bundle below; the old bundle alone is no longer sufficient for this code.
+
 ## Implemented flow
 
 1. ChatGPT discovers `/.well-known/oauth-protected-resource/api/mcp` and `/.well-known/oauth-authorization-server`.

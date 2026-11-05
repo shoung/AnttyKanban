@@ -28,6 +28,8 @@ const clientSchema = z
   })
   .strict();
 export interface FirebaseOAuthConfig {
+  /** Server-only, required pilot boundary. Never advertise this UID in metadata. */
+  testUid: string;
   origin: string;
   host: string;
   issuer: string;
@@ -87,7 +89,12 @@ export function getFirebaseOAuthConfig(
     const scopes = scopesSchema.parse(
       (env.ANTTY_MCP_FIREBASE_OAUTH_SCOPES ?? 'maps:read').split(' '),
     );
+    const testUid = z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{1,128}$/)
+      .parse(env.ANTTY_MCP_FIREBASE_OAUTH_TEST_UID);
     return {
+      testUid,
       ...settings,
       issuer: settings.origin,
       resource: `${settings.origin}/api/mcp`,
@@ -194,6 +201,7 @@ export function createFirebaseOAuthService(
     } catch {
       return oauthError();
     }
+    if (uid !== config.testUid) return oauthError('access_denied', 403);
     try {
       user = await dependencies.getAccount(uid);
     } catch (failure) {
@@ -439,6 +447,7 @@ export function createFirebaseOAuthService(
     },
     async list(uid: string, after?: string) {
       enforceUid(uid);
+      if (uid !== config.testUid) return oauthError('access_denied', 403);
       if (after && !hashSchema.safeParse(after).success) return oauthError('invalid_request');
       return (await repository.listGrants(uid, after)).map(({ id, row }) => {
         const grant = grantSchema.parse(row);
