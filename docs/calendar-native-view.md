@@ -69,6 +69,8 @@ rendered. This change does not automatically delete existing browser settings.
 The pinned FullCalendar 6.1.20 core/react/daygrid/timegrid/interaction packages use
 the MIT license (including commercial use). No Premium or Scheduler package/key
 is installed. Keep dependency copyright and license notices.
+The full copyright/license notices for these packages and their Preact dependency
+are distributed at `/third-party-notices.txt` from `public/third-party-notices.txt`.
 
 As checked on 2026-11-05, Google's Calendar API usage guide states standard usage
 has no additional cost and describes a daily per-project billing threshold of

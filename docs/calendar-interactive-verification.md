@@ -41,3 +41,8 @@ The build retains upstream Rollup annotation notices and the existing app's larg
 main-chunk warning. Dependency installation reported the same 30 advisories as
 the baseline (24 moderate, 6 high); this change does not remediate unrelated
 dependencies. Feature-branch automatic Vercel deployment is explicitly disabled.
+
+GitHub Actions run 41971572648 passed the complete Node 22/26 matrix on functional
+commit `83619df`. The following notices-only commit adds distributed MIT copyright
+and license text for FullCalendar and Preact; its build also verifies that
+`public/third-party-notices.txt` is copied unchanged to `dist`.
