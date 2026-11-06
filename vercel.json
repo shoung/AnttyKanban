@@ -10,7 +10,8 @@
       "feat/calendar-interactive-ui": false,
       "feat/chatgpt-mcp-oauth": false,
       "feat/mcp-client-crud": false,
-      "fix/legacy-rules-and-mcp-pilot": false
+      "fix/legacy-rules-and-mcp-pilot": false,
+      "fix/oauth-ui-locales": false
     }
   },
   "rewrites": [

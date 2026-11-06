@@ -111,6 +111,8 @@ test('real SDK discovers first-party OAuth, performs S256 code exchange, reads s
       'REDIRECT',
     );
     assert.ok(authorization);
+    // Reproduce the hosted ChatGPT request shape without using live credentials.
+    authorization.searchParams.set('ui_locales', 'zh-CN');
     const start = await localFetch(authorization, { redirect: 'manual' });
     assert.equal(start.status, 303);
     const cookie = start.headers.get('set-cookie')!.split(';')[0],

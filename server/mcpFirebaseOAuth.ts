@@ -247,6 +247,8 @@ export function createFirebaseOAuthService(
         'state',
         'code_challenge',
         'code_challenge_method',
+        // Optional presentation hint sent by hosted ChatGPT; never used for authorization.
+        'ui_locales',
       ]);
       if (!p.redirect_uri) return oauthError('invalid_request');
       client(p.client_id, p.redirect_uri);

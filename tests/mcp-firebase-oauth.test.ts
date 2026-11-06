@@ -9,6 +9,45 @@ import { getMcpLinkConfig } from '../server/mcpLink.ts';
 const rejects = (work: Promise<unknown>, error = 'invalid_grant') =>
   assert.rejects(work, (failure: unknown) => (failure as { error: string }).error === error);
 
+test('authorization accepts optional UI locale hints without changing the scoped grant', async () => {
+  for (const locale of ['zh-CN', 'zh-TW en-US', 'zz-ZZ', '']) {
+    const f = oauthFixture();
+    f.parameters.set('ui_locales', locale);
+    const { code } = await f.approve();
+    const token = await f.exchange(code);
+    assert.equal(token.scope, 'maps:read');
+    assert.equal('refresh_token' in token, false);
+    assert.deepEqual(await f.service.authenticate(token.access_token), {
+      uid: 'alice',
+      scopes: ['maps:read'],
+      tokenIssuedAt: NOW,
+      authentication: 'oauth',
+    });
+  }
+});
+
+test('UI locale hints do not allow duplicate or unknown authorization parameters', async () => {
+  for (const key of [
+    'client_id',
+    'redirect_uri',
+    'resource',
+    'scope',
+    'state',
+    'code_challenge',
+    'code_challenge_method',
+    'ui_locales',
+  ]) {
+    const f = oauthFixture();
+    f.parameters.set('ui_locales', 'zh-CN');
+    f.parameters.append(key, f.parameters.get(key)!);
+    await rejects(f.service.begin(f.parameters), 'invalid_request');
+  }
+  const f = oauthFixture();
+  f.parameters.set('ui_locales', 'zh-CN');
+  f.parameters.set('unexpected', 'value');
+  await rejects(f.service.begin(f.parameters), 'invalid_request');
+});
+
 const serviceUnavailable = (failure: unknown) => {
   assert.equal((failure as { status: number }).status, 503);
   assert.equal((failure as { error: string }).error, 'temporarily_unavailable');
@@ -197,6 +236,7 @@ test('authorize rejects broad scopes, ambiguous parameters, unsafe redirects, ab
     { code_challenge: 'short' },
   ]) {
     const f = oauthFixture();
+    f.parameters.set('ui_locales', 'zh-CN');
     Object.entries(patch).forEach(([k, v]) => f.parameters.set(k, v));
     await assert.rejects(f.service.begin(f.parameters));
   }
