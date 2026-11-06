@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { listenForFetch } from './fixtures/listen-fetch.ts';
+import { withVercelFormBody } from './fixtures/vercel-form.ts';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { auth, type OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
 import type { OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
@@ -59,7 +60,8 @@ test('real SDK discovers first-party OAuth, performs S256 code exchange, reads s
         },
       }) as unknown as McpDataService,
   });
-  const server = createServer((req, res) => {
+  const server = createServer(async (req, res) => {
+    await withVercelFormBody(req);
     req.headers.host = settings.host;
     for (let i = 0; i < req.rawHeaders.length; i += 2)
       if (req.rawHeaders[i].toLowerCase() === 'host') req.rawHeaders[i + 1] = settings.host;

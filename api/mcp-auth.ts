@@ -18,6 +18,7 @@ import {
   safeMcpError,
 } from '../server/mcpHttp.js';
 
+// Next-compatible opt-out. Standalone Vercel helpers are handled by raw replay below.
 export const config = { api: { bodyParser: false } };
 const cookieName = '__Host-antty_mcp_oauth';
 const cookie = (value: string, seconds: number) =>
@@ -37,28 +38,43 @@ interface Dependencies {
   authenticate(req: IncomingMessage): Promise<{ uid: string; authTime: number }>;
   quota(key: string, limit: number, windowMs: number): Promise<void>;
 }
-async function readForm(req: IncomingMessage & { body?: unknown }) {
+async function readForm(req: IncomingMessage) {
   if (!/^application\/x-www-form-urlencoded(?:\s*;|$)/i.test(req.headers['content-type'] ?? ''))
     return oauthError('invalid_request', 415);
   const length = req.headers['content-length'];
   if (length && (!/^\d+$/.test(length) || Number(length) > 8192))
     return oauthError('invalid_request', 413);
-  let body: string;
-  if (req.body !== undefined) {
-    if (typeof req.body !== 'string') return oauthError('invalid_request');
-    body = req.body;
-  } else {
+  // Standalone Vercel parses req.body with querystring.parse (which can truncate
+  // duplicate keys), but replays the original bytes through data/end listeners.
+  // Never reconstruct OAuth parameters from that lossy object or use async iteration
+  // over the already-consumed IncomingMessage. Both raw Node and Vercel use this path.
+  const body = await new Promise<string>((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
-    for await (const chunk of req) {
-      const bytes = Buffer.from(chunk);
+    let finished = false;
+    const fail = (status: number) => {
+      if (finished) return;
+      finished = true;
+      chunks.length = 0;
+      reject(Object.assign(new Error('Invalid form body'), { error: 'invalid_request', status }));
+    };
+    req.on('error', () => fail(400));
+    req.on('aborted', () => fail(400));
+    req.on('end', () => {
+      if (finished) return;
+      finished = true;
+      resolve(Buffer.concat(chunks).toString('utf8'));
+      chunks.length = 0;
+    });
+    req.on('data', (chunk: Buffer | string) => {
+      if (finished) return;
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       size += bytes.length;
-      if (size > 8192) return oauthError('invalid_request', 413);
+      if (size > 8192) return fail(413);
       chunks.push(bytes);
-    }
-    body = Buffer.concat(chunks).toString('utf8');
-  }
-  if (Buffer.byteLength(body) > 8192) return oauthError('invalid_request', 413);
+    });
+    if (req.aborted) fail(400);
+  });
   return new URLSearchParams(body);
 }
 export function createFirebaseOAuthHandler(
