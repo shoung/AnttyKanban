@@ -13,7 +13,8 @@
       "fix/legacy-rules-and-mcp-pilot": false,
       "fix/oauth-ui-locales": false,
       "fix/oauth-vercel-form-body": false,
-      "test/firebase-oauth-emulator-crud": false
+      "test/firebase-oauth-emulator-crud": false,
+      "test/calendar-transport-contracts": false
     }
   },
   "rewrites": [

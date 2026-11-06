@@ -82,6 +82,9 @@ export function googleGateway(config: CalendarConfig): GoogleGateway {
         !['GET', 'POST', 'PATCH', 'DELETE'].includes(method)
       )
         throw new CalendarError('INVALID_REQUEST');
+      // Once a write is dispatched, a transport/server failure cannot prove it did not commit.
+      const unavailable = () =>
+        new CalendarError(method === 'GET' ? 'GOOGLE_UNAVAILABLE' : 'GOOGLE_WRITE_UNCERTAIN', 502);
       let response: Response;
       try {
         response = await fetch(`https://www.googleapis.com/calendar/v3${path}`, {
@@ -95,19 +98,58 @@ export function googleGateway(config: CalendarConfig): GoogleGateway {
           signal: AbortSignal.timeout(15_000),
         });
       } catch {
-        throw new CalendarError('GOOGLE_UNAVAILABLE', 502);
+        throw unavailable();
       }
       if (!response.ok) {
         if (response.status === 412) throw new CalendarError('EVENT_CHANGED', 409);
         if (response.status === 404 || response.status === 410)
           throw new CalendarError('EVENT_NOT_FOUND', 404);
         if (response.status === 401) throw new CalendarError('RECONNECT_REQUIRED', 401);
-        if (response.status === 403) throw new CalendarError('GOOGLE_PERMISSION_DENIED', 403);
+        if (response.status === 403) {
+          const data = (await response.json().catch(() => null)) as {
+            error?: { errors?: Array<{ reason?: string }> };
+          } | null;
+          if (
+            Array.isArray(data?.error?.errors) &&
+            data.error.errors.some((error) =>
+              ['rateLimitExceeded', 'userRateLimitExceeded'].includes(error?.reason ?? ''),
+            )
+          )
+            throw new CalendarError('RATE_LIMITED', 429);
+          throw new CalendarError('GOOGLE_PERMISSION_DENIED', 403);
+        }
         if (response.status === 429) throw new CalendarError('RATE_LIMITED', 429);
-        throw new CalendarError('GOOGLE_UNAVAILABLE', 502);
+        throw unavailable();
       }
-      if (response.status === 204) return undefined;
-      return response.json();
+      if (response.status === 204 && method === 'DELETE') return undefined;
+      try {
+        const data: unknown = await response.json();
+        const preflight = method === 'GET' && /^\/calendars\/primary\/events\//.test(path);
+        if (method === 'POST' || method === 'PATCH' || preflight) {
+          // Reject malformed acknowledgements and fail closed before using a preflight for a write.
+          const event = data as Record<string, unknown> | null;
+          const organizer = event?.organizer as { self?: unknown } | undefined;
+          const hasDate = (value: unknown) => {
+            const date = value as Record<string, unknown> | null;
+            return date && (typeof date.date === 'string' || typeof date.dateTime === 'string');
+          };
+          if (
+            !event ||
+            typeof event.id !== 'string' ||
+            !event.id ||
+            typeof event.etag !== 'string' ||
+            !event.etag ||
+            !hasDate(event.start) ||
+            !hasDate(event.end) ||
+            (preflight && typeof organizer?.self !== 'boolean')
+          )
+            throw unavailable();
+        }
+        return data;
+      } catch {
+        // JSON/body stream errors can include upstream data; never forward those details.
+        throw unavailable();
+      }
     },
   };
 }
