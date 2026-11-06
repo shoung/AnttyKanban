@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { PassThrough } from 'node:stream';
 import { listenForFetch } from './fixtures/listen-fetch.ts';
+import { withVercelFormBody } from './fixtures/vercel-form.ts';
 import { createFirebaseOAuthHandler } from '../api/mcp-auth.ts';
 import { oauthFixture, settings } from './fixtures/firebase-oauth.ts';
 
@@ -146,5 +148,112 @@ test('OAuth HTTP serves discovery and bounded public token exchange while requir
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+test(
+  'Vercel form replay preserves raw token/revoke bytes, duplicate rejection and size limits',
+  { timeout: 10_000 },
+  async () => {
+    const f = oauthFixture();
+    const handler = createFirebaseOAuthHandler({
+      config: () => f.config,
+      service: () => f.service,
+      authenticate: async () => f.identity,
+      quota: async () => {},
+    });
+    const server = createServer(async (req, res) => {
+      req.headers.host = settings.host;
+      await withVercelFormBody(req);
+      // Exercise raw replay limits even without a Content-Length header.
+      delete req.headers['content-length'];
+      void handler(req, res);
+    });
+    const base = await listenForFetch(server);
+    const post = (action: string, body: string) =>
+      fetch(`${base}/oauth/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+      });
+    try {
+      const { code } = await f.approve();
+      const form = new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: 'chatgpt-personal',
+        redirect_uri: 'https://chatgpt.com/callback',
+        resource: f.config.resource,
+        code,
+        code_verifier: 'v'.repeat(43),
+      });
+      for (const [key, value] of form) {
+        for (const separator of ['&', '&'.repeat(1000)]) {
+          const response = await post(
+            'token',
+            `${form}${separator}${key}=${encodeURIComponent(value)}`,
+          );
+          assert.equal(response.status, 400);
+          assert.deepEqual(await response.json(), { error: 'invalid_request' });
+        }
+      }
+      assert.equal((await post('token', `${form}${'&'.repeat(1000)}unexpected=value`)).status, 400);
+      assert.equal((await post('token', `${form}${'&'.repeat(8192)}`)).status, 413);
+      // Rejected requests cannot consume the legitimate code.
+      const exchanged = await post(
+        'token',
+        `${form}${'&'.repeat(8192 - Buffer.byteLength(form.toString()))}`,
+      );
+      assert.equal(exchanged.status, 200);
+      const token = await exchanged.json();
+      assert.equal((await f.service.authenticate(token.access_token)).uid, 'alice');
+      const revoke = new URLSearchParams({
+        client_id: 'chatgpt-personal',
+        token: token.access_token,
+      });
+      const duplicate = await post('revoke', `${revoke}${'&'.repeat(1000)}token=another`);
+      assert.equal(duplicate.status, 400);
+      assert.equal((await f.service.authenticate(token.access_token)).uid, 'alice');
+      assert.equal((await post('revoke', revoke.toString())).status, 200);
+      await assert.rejects(f.service.authenticate(token.access_token));
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  },
+);
+
+test('OAuth raw form reader rejects aborted, errored and oversized streams without exposing errors', async () => {
+  for (const failure of ['aborted', 'already-aborted', 'error', 'oversized']) {
+    const f = oauthFixture();
+    const handler = createFirebaseOAuthHandler({
+      config: () => f.config,
+      service: () => f.service,
+      authenticate: async () => f.identity,
+      quota: async () => {},
+    });
+    const req = Object.assign(new PassThrough(), {
+      headers: { host: settings.host, 'content-type': 'application/x-www-form-urlencoded' },
+      method: 'POST',
+      url: '/oauth/token',
+      socket: { remoteAddress: '127.0.0.1' },
+      aborted: failure === 'already-aborted',
+    });
+    let output = '';
+    const res = {
+      statusCode: 200,
+      setHeader() {},
+      end(body: string) {
+        output = body;
+      },
+    };
+    const handling = handler(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+    await Promise.resolve();
+    if (failure === 'aborted') req.emit('aborted');
+    if (failure === 'error') req.emit('error', new Error('private-upstream-body'));
+    if (failure === 'oversized') req.end('x'.repeat(8193));
+    await handling;
+    assert.equal(res.statusCode, failure === 'oversized' ? 413 : 400);
+    assert.deepEqual(JSON.parse(output), { error: 'invalid_request' });
+    req.destroy();
   }
 });
