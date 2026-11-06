@@ -12,7 +12,8 @@
       "feat/mcp-client-crud": false,
       "fix/legacy-rules-and-mcp-pilot": false,
       "fix/oauth-ui-locales": false,
-      "fix/oauth-vercel-form-body": false
+      "fix/oauth-vercel-form-body": false,
+      "test/firebase-oauth-emulator-crud": false
     }
   },
   "rewrites": [
