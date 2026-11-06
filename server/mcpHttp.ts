@@ -1,5 +1,6 @@
 import type { IncomingHttpHeaders, ServerResponse } from 'node:http';
 import { ZodError } from 'zod';
+import { CalendarError } from './calendar/core.js';
 import { getAdminDb } from './firebase.js';
 import { tokenHash } from './mcpPolicy.js';
 
@@ -140,6 +141,12 @@ export function jsonResponse(res: ServerResponse, status: number, value: unknown
   res.end(JSON.stringify(value));
 }
 export function safeMcpError(error: unknown): { status: number; error: string } {
+  if (error instanceof CalendarError && error.code === 'GOOGLE_WRITE_UNCERTAIN')
+    return {
+      status: 502,
+      error:
+        'GOOGLE_WRITE_UNCERTAIN: The operation may have completed. Do not retry; read the calendar and check the result first.',
+    };
   if (error instanceof ZodError) return { status: 400, error: 'Invalid request data' };
   const status = (error as { status?: number })?.status;
   if (
