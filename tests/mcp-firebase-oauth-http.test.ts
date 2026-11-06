@@ -38,6 +38,8 @@ test('OAuth HTTP serves discovery and bounded public token exchange while requir
     const invalid = await fetch(`${base}/oauth/authorize?client_id=evil`, { redirect: 'manual' });
     assert.equal(invalid.status, 400);
     assert.equal(invalid.headers.get('location'), null);
+    // The real hosted ChatGPT client includes this optional presentation hint.
+    f.parameters.set('ui_locales', 'zh-CN');
     const start = await fetch(`${base}/oauth/authorize?${f.parameters}`, { redirect: 'manual' });
     assert.equal(start.status, 303);
     const cookie = start.headers.get('set-cookie')!;
